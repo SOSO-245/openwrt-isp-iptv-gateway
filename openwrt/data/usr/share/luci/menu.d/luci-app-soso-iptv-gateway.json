@@ -1,0 +1,13 @@
+{
+  "admin/services/soso-iptv-gateway": {
+    "title": "IPTV 网关",
+    "order": 60,
+    "action": {
+      "type": "template",
+      "path": "soso_iptv_gateway"
+    },
+    "depends": {
+      "acl": [ "luci-app-soso-iptv-gateway" ]
+    }
+  }
+}

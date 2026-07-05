@@ -1,0 +1,68 @@
+#!/bin/sh
+
+set -e
+
+IPTV_IN="${IPTV_IN:-eth1}"
+STB_USB="${STB_USB:-eth2}"
+LAN_IP="$(uci -q get network.lan.ipaddr 2>/dev/null || echo 192.168.1.1)"
+printf '%s\n' "$LAN_IP" > /etc/soso-iptv-lan-ip
+sed -i "s#http://ROUTER-IP:8080#http://$LAN_IP:8080#g" /etc/soso-iptv-gateway.yaml 2>/dev/null || true
+
+echo "$STB_USB" > /etc/iptv-capture-iface
+
+uci -q delete network.iptvbr || true
+uci set network.iptvbr='device'
+uci set network.iptvbr.name='br-iptv'
+uci set network.iptvbr.type='bridge'
+uci add_list network.iptvbr.ports="$IPTV_IN"
+uci add_list network.iptvbr.ports="$STB_USB"
+uci set network.iptvbr.igmp_snooping='0'
+uci set network.iptvbr.multicast_querier='0'
+
+uci set network.wan='interface'
+uci set network.wan.device='br-iptv'
+uci set network.wan.proto='dhcp'
+uci set network.wan.defaultroute='0'
+uci set network.wan.peerdns='0'
+uci set network.wan.metric='500'
+uci -q delete network.wan.ipaddr || true
+uci -q delete network.wan.netmask || true
+uci -q delete network.wan.gateway || true
+
+uci -q delete network.iptv_mcast_239 || true
+uci set network.iptv_mcast_239='route'
+uci set network.iptv_mcast_239.interface='wan'
+uci set network.iptv_mcast_239.target='239.0.0.0'
+uci set network.iptv_mcast_239.netmask='255.0.0.0'
+uci commit network
+
+if uci -q show udpxy >/dev/null 2>&1; then
+  uci set udpxy.@udpxy[0].disabled='0'
+  uci set udpxy.@udpxy[0].bind="$LAN_IP"
+  uci set udpxy.@udpxy[0].source='br-iptv'
+  uci set udpxy.@udpxy[0].port='12123'
+  uci commit udpxy
+  /etc/init.d/udpxy enable >/dev/null 2>&1 || true
+  /etc/init.d/udpxy restart >/dev/null 2>&1 || true
+fi
+
+/etc/init.d/iptv-tc-bridge enable >/dev/null 2>&1 || true
+/etc/init.d/iptv-tc-bridge restart >/dev/null 2>&1 || true
+rm -f /tmp/luci-indexcache.* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache 2>/dev/null || true
+mkdir -p /var/run/ubus 2>/dev/null || true
+if [ -S /var/run/ubus/ubus.sock ] && [ ! -e /var/run/ubus.sock ]; then
+  ln -s /var/run/ubus/ubus.sock /var/run/ubus.sock 2>/dev/null || true
+elif [ -S /var/run/ubus.sock ] && [ ! -e /var/run/ubus/ubus.sock ]; then
+  ln -s ../ubus.sock /var/run/ubus/ubus.sock 2>/dev/null || true
+fi
+if ! ubus list >/dev/null 2>&1 && [ -x /etc/init.d/ubus ]; then
+  /etc/init.d/ubus restart >/dev/null 2>&1 || true
+fi
+/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+for svc in higoros higoos higoros-api higoos-api higo-api; do
+  [ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" restart >/dev/null 2>&1 || true
+done
+/etc/init.d/uhttpd reload >/dev/null 2>&1 || true
+
+exit 0

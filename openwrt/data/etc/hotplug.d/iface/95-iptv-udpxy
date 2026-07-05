@@ -1,0 +1,22 @@
+#!/bin/sh
+# IPTV 口(wan/br-iptv) DHCP 地址变化时，自动把 udpxy.source 更新为当前 IPTV IP 并重启 udpxy，
+# 避免续租后 udpxy 仍指向旧地址导致单播失效。
+[ "$INTERFACE" = "wan" ] || exit 0
+case "$ACTION" in
+  ifup|ifupdate)
+    iptv_ip="$(ip -4 -o addr show br-iptv 2>/dev/null | sed -n 's#.* inet \([0-9.]*\)/.*#\1#p' | head -1)"
+    [ -n "$iptv_ip" ] || exit 0
+    bind_ip="$(uci -q get network.lan.ipaddr 2>/dev/null || sed -n '1{s/[[:space:]]//g;p;q}' /etc/soso-iptv-lan-ip 2>/dev/null || echo 192.168.1.1)"
+    cur="$(uci -q get udpxy.@udpxy[0].source)"
+    uci set udpxy.@udpxy[0].source="$iptv_ip" 2>/dev/null || true
+    uci set udpxy.@udpxy[0].bind="$bind_ip" 2>/dev/null || true
+    uci set udpxy.@udpxy[0].port="12123" 2>/dev/null || true
+    uci commit udpxy 2>/dev/null || true
+    [ "$cur" = "$iptv_ip" ] && exit 0
+    if [ "$(uci -q get udpxy.@udpxy[0].disabled)" != "1" ]; then
+      /etc/init.d/udpxy stop >/dev/null 2>&1 || true
+      killall -9 udpxy >/dev/null 2>&1 || true
+      /etc/init.d/udpxy start >/dev/null 2>&1 || true
+    fi
+  ;;
+esac

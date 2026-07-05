@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.log
+*.pcap
+*.tmp
+tmp/
+.env
+*.bak
+runtime/
+dist/selfuse/
+*.local

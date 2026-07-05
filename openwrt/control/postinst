@@ -1,0 +1,31 @@
+#!/bin/sh
+
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+chmod 755 /www/cgi-bin/iptv-action /www/cgi-bin/iptv-status /usr/bin/soso-epg-gen /etc/init.d/iptv-tc-bridge 2>/dev/null || true
+chmod 755 /etc/hotplug.d/net/96-iptv-capture-repair /etc/hotplug.d/iface/96-iptv-capture-repair 2>/dev/null || true
+chmod 755 /etc/hotplug.d/iface/95-iptv-udpxy 2>/dev/null || true
+
+if [ -x /etc/uci-defaults/99-soso-iptv-gateway ]; then
+  /etc/uci-defaults/99-soso-iptv-gateway || true
+  rm -f /etc/uci-defaults/99-soso-iptv-gateway
+fi
+
+rm -f /tmp/luci-indexcache.* 2>/dev/null || true
+rm -rf /tmp/luci-modulecache 2>/dev/null || true
+mkdir -p /var/run/ubus 2>/dev/null || true
+if [ -S /var/run/ubus/ubus.sock ] && [ ! -e /var/run/ubus.sock ]; then
+  ln -s /var/run/ubus/ubus.sock /var/run/ubus.sock 2>/dev/null || true
+elif [ -S /var/run/ubus.sock ] && [ ! -e /var/run/ubus/ubus.sock ]; then
+  ln -s ../ubus.sock /var/run/ubus/ubus.sock 2>/dev/null || true
+fi
+if ! ubus list >/dev/null 2>&1 && [ -x /etc/init.d/ubus ]; then
+  /etc/init.d/ubus restart >/dev/null 2>&1 || true
+fi
+/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+for svc in higoros higoos higoros-api higoos-api higo-api; do
+  [ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" restart >/dev/null 2>&1 || true
+done
+/etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+
+exit 0

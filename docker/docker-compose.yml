@@ -1,0 +1,16 @@
+services:
+  soso-iptv-gateway:
+    build: .
+    image: soso-iptv-gateway:1.1.5
+    container_name: soso-iptv-gateway
+    restart: unless-stopped
+    network_mode: host          # 需要抓组播/单播时用 host 网络
+    privileged: true            # tcpdump / tc 需要
+    environment:
+      - TZ=Asia/Shanghai
+      - LAN_IP=192.168.1.1      # 改成本机/路由 LAN IP（播放器、节目单 URL 用）
+      - EPG_HOST=               # 可选：php-epg 主机 IP，用于本地台标库
+    volumes:
+      - ./data/www:/www                       # 节目单/页面，持久化
+      - ./data/tmp:/tmp/iptv                  # 运行时抓包数据
+      - ./data/stats:/etc/soso-iptv-stats     # 播放统计持久化

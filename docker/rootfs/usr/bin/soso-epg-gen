@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+# Generate a local XMLTV file whose channel ids match the current M3U tvg-id.
+import gzip
+import html
+import os
+import re
+import shutil
+import sys
+import tempfile
+import time
+import urllib.request
+import xml.etree.ElementTree as ET
+
+
+WWW_DIR = os.environ.get("IPTV_WWW_DIR", "/www")
+ETC_DIR = os.environ.get("IPTV_ETC_DIR", "/etc")
+TMP_DIR = os.environ.get("IPTV_TMP_DIR", "/tmp/iptv/trash")
+os.makedirs(TMP_DIR, exist_ok=True)
+
+EPG_SOURCES_FILE = os.path.join(ETC_DIR, "soso-iptv-epg-sources")
+EPG_HOST_FILE = os.path.join(ETC_DIR, "soso-iptv-epg-host")
+
+
+def read_text(path):
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def epg_host():
+    return os.environ.get("EPG_HOST") or read_text(EPG_HOST_FILE)
+
+
+def norm_space(s):
+    return re.sub(r"\s+", "", (s or "").strip())
+
+
+def cctv_key(s):
+    raw = norm_space(s).upper().replace("＋", "+")
+    raw = raw.replace("CCTV-", "CCTV").replace("CCTV ", "CCTV")
+    if "美洲" in raw:
+        return "CCTV4美洲"
+    if "欧洲" in raw:
+        return "CCTV4欧洲"
+    if re.search(r"CCTV\s*[-]?\s*4K", raw):
+        return "CCTV4K"
+    m = re.search(r"CCTV\s*[-]?\s*(\d{1,2})(?:P(?:LUS)?|\+)?", raw)
+    if not m:
+        return ""
+    n = str(int(m.group(1)))
+    tail = raw[m.end() :]
+    if "+" in raw or "PLUS" in raw or re.match(r"^[Pp](?:LUS)?", tail or ""):
+        return f"CCTV{n}+"
+    return f"CCTV{n}"
+
+
+def candidate_keys(name):
+    keys = []
+    raw = norm_space(name)
+    if not raw:
+        return keys
+
+    def add(v):
+        v = norm_space(v)
+        if v and v not in keys:
+            keys.append(v)
+
+    add(raw)
+    ck = cctv_key(raw)
+    if ck:
+        add(ck)
+
+    s = raw
+    s = re.sub(r"[（(].*?[）)]", "", s)
+    s = s.replace("-", "").replace("－", "")
+    s = re.sub(r"线路\d+$", "", s)
+    add(s)
+
+    quality_removed = s
+    for token in ("4K超高清", "超高清", "4K", "高清", "超清", "标清", "LD", "HD", "IPTV"):
+        quality_removed = quality_removed.replace(token, "")
+    quality_removed = re.sub(r"(频道|专区|台)$", "", quality_removed)
+    add(quality_removed)
+    if quality_removed.endswith("卫视"):
+        add(quality_removed[:-2])
+
+    # Common php-epg/fanmingming aliases.
+    aliases = {
+        "CCTV5PLUS": "CCTV5+",
+        "CCTV5P": "CCTV5+",
+        "CCTV4中文国际美洲": "CCTV4美洲",
+        "CCTV4中文国际欧洲": "CCTV4欧洲",
+        "CCTV中文国际美洲": "CCTV4美洲",
+        "CCTV中文国际欧洲": "CCTV4欧洲",
+        "澳门MACAU卫视": "澳门卫视",
+        "NHKWORLD": "NHKWORLD",
+        "NHK-WORLD": "NHKWORLD",
+        "CGTN英文纪录": "CGTN纪录",
+        "CGTN纪录": "CGTN纪录",
+        "BTV纪实": "北京纪实科教",
+        "KAKU少儿": "KAKU少儿",
+    }
+    upper = raw.upper()
+    for k, v in aliases.items():
+        if k.upper() in upper:
+            add(v)
+    return keys
+
+
+def parse_attrs(line):
+    return dict(re.findall(r'([\w-]+)="([^"]*)"', line or ""))
+
+
+def parse_playlist():
+    src = os.path.join(WWW_DIR, "new-logo.m3u")
+    if not os.path.exists(src):
+        src = os.path.join(WWW_DIR, "new.m3u")
+    if not os.path.exists(src):
+        raise RuntimeError("missing /www/new-logo.m3u or /www/new.m3u")
+
+    channels = []
+    pending = None
+    with open(src, "r", encoding="utf-8", errors="ignore") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if line.startswith("#EXTINF"):
+                attrs = parse_attrs(line)
+                display = line.rsplit(",", 1)[-1].strip() if "," in line else ""
+                tvg_id = attrs.get("tvg-id") or attrs.get("tvg-name") or display
+                tvg_name = attrs.get("tvg-name") or display or tvg_id
+                pending = {
+                    "id": tvg_id.strip(),
+                    "name": tvg_name.strip(),
+                    "display": (display or tvg_name or tvg_id).strip(),
+                    "logo": attrs.get("tvg-logo", "").strip(),
+                }
+            elif pending and line and not line.startswith("#"):
+                pending["url"] = line
+                channels.append(pending)
+                pending = None
+
+    key_map = {}
+    id_map = {}
+    for ch in channels:
+        if not ch["id"]:
+            continue
+        id_map.setdefault(ch["id"], ch)
+        for value in (ch["id"], ch["name"], ch["display"]):
+            for key in candidate_keys(value):
+                key_map.setdefault(key, []).append(ch)
+    return channels, key_map
+
+
+def load_sources():
+    sources = []
+    if os.path.exists(EPG_SOURCES_FILE):
+        with open(EPG_SOURCES_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    sources.append(line)
+    host = epg_host()
+    if host:
+        local = f"http://{host}:8080/t.xml.gz"
+        if local not in sources:
+            sources.append(local)
+    # Preserve order, remove duplicates.
+    seen = set()
+    out = []
+    for src in sources:
+        if src not in seen:
+            seen.add(src)
+            out.append(src)
+    return out
+
+
+def fetch_source(url, out_path):
+    if url.startswith("file://"):
+        src = url[7:]
+        shutil.copyfile(src, out_path)
+        return
+    if os.path.exists(url):
+        shutil.copyfile(url, out_path)
+        return
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 SOSO-IPTV-Gateway"})
+    with urllib.request.urlopen(req, timeout=90) as resp, open(out_path, "wb") as f:
+        shutil.copyfileobj(resp, f)
+
+
+def maybe_decompress(path, xml_path):
+    with open(path, "rb") as f:
+        head = f.read(2)
+    if head == b"\x1f\x8b":
+        with gzip.open(path, "rb") as src, open(xml_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+    else:
+        shutil.copyfile(path, xml_path)
+
+
+def local_name(tag):
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def elem_texts(elem, child_name):
+    vals = []
+    for child in elem:
+        if local_name(child.tag) == child_name and child.text:
+            vals.append(child.text.strip())
+    return vals
+
+
+def elem_icon(elem):
+    for child in elem:
+        if local_name(child.tag) == "icon":
+            return child.attrib.get("src", "").strip()
+    return ""
+
+
+def channel_xml(ch, icon):
+    cid = html.escape(ch["id"], quote=True)
+    names = []
+    for value in (ch["display"], ch["name"], ch["id"]):
+        if value and value not in names:
+            names.append(value)
+    lines = [f'  <channel id="{cid}">']
+    for name in names:
+        lines.append(f"    <display-name>{html.escape(name)}</display-name>")
+    logo = ch.get("logo") or icon
+    if logo:
+        lines.append(f'    <icon src="{html.escape(logo, quote=True)}" />')
+    lines.append("  </channel>")
+    return "\n".join(lines) + "\n"
+
+
+def programme_xml(elem, new_channel_id):
+    elem.attrib["channel"] = new_channel_id
+    xml = ET.tostring(elem, encoding="unicode")
+    return "  " + xml.replace("\n", "\n  ") + "\n"
+
+
+def match_channels(xml_path, key_map):
+    source_to_playlist = {}
+    channel_defs = {}
+    for _event, elem in ET.iterparse(xml_path, events=("end",)):
+        if local_name(elem.tag) != "channel":
+            continue
+        src_id = elem.attrib.get("id", "").strip()
+        values = [src_id] + elem_texts(elem, "display-name")
+        hits = []
+        seen_ids = set()
+        for value in values:
+            for key in candidate_keys(value):
+                for ch in key_map.get(key, []):
+                    if ch["id"] not in seen_ids:
+                        hits.append(ch)
+                        seen_ids.add(ch["id"])
+        if src_id and hits:
+            source_to_playlist[src_id] = hits
+            icon = elem_icon(elem)
+            for ch in hits:
+                channel_defs.setdefault(ch["id"], channel_xml(ch, icon))
+        elem.clear()
+    return source_to_playlist, channel_defs
+
+
+def collect_programmes(xml_path, source_to_playlist, channel_done, seen_programmes):
+    programmes = []
+    count = 0
+    for _event, elem in ET.iterparse(xml_path, events=("end",)):
+        if local_name(elem.tag) != "programme":
+            continue
+        src_id = elem.attrib.get("channel", "").strip()
+        hits = source_to_playlist.get(src_id) or []
+        title = "|".join(elem_texts(elem, "title")[:2])
+        start = elem.attrib.get("start", "")
+        stop = elem.attrib.get("stop", "")
+        for ch in hits:
+            dedupe_key = (ch["id"], start, stop, title)
+            if dedupe_key in seen_programmes:
+                continue
+            seen_programmes.add(dedupe_key)
+            programmes.append(programme_xml(elem, ch["id"]))
+            channel_done.add(ch["id"])
+            count += 1
+        elem.clear()
+    return programmes, count
+
+
+def main():
+    channels, key_map = parse_playlist()
+    if not channels:
+        raise RuntimeError("playlist has no channels")
+
+    work = tempfile.mkdtemp(prefix="epggen-", dir=TMP_DIR)
+    all_channel_defs = {}
+    all_programmes = []
+    channel_done = set()
+    ok_sources = 0
+    total_sources = 0
+    matched_source_channels = 0
+    seen_programmes = set()
+
+    for src in load_sources():
+        total_sources += 1
+        raw = os.path.join(work, f"source-{total_sources}.raw")
+        xml = os.path.join(work, f"source-{total_sources}.xml")
+        try:
+            fetch_source(src, raw)
+            if not os.path.getsize(raw):
+                continue
+            maybe_decompress(raw, xml)
+            source_to_playlist, channel_defs = match_channels(xml, key_map)
+            if not source_to_playlist:
+                continue
+            programmes, programme_count = collect_programmes(xml, source_to_playlist, channel_done, seen_programmes)
+            if programme_count == 0:
+                continue
+            ok_sources += 1
+            matched_source_channels += len(source_to_playlist)
+            for cid, definition in channel_defs.items():
+                if cid in channel_done:
+                    all_channel_defs.setdefault(cid, definition)
+            all_programmes.extend(programmes)
+        except Exception as exc:
+            print(f"skip {src}: {exc}", file=sys.stderr)
+
+    if not all_programmes or not all_channel_defs:
+        raise RuntimeError("no matched EPG programmes")
+
+    out_xml = os.path.join(work, "epg.xml")
+    with open(out_xml, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write('<tv generator-info-name="SOSO IPTV Gateway">\n')
+        # Keep playlist order for channels.
+        emitted = set()
+        for ch in channels:
+            cid = ch["id"]
+            if cid in all_channel_defs and cid not in emitted:
+                f.write(all_channel_defs[cid])
+                emitted.add(cid)
+        for programme in all_programmes:
+            f.write(programme)
+        f.write("</tv>\n")
+
+    backup_dir = os.path.join(TMP_DIR, "history", "epg")
+    os.makedirs(backup_dir, exist_ok=True)
+    old_gz = os.path.join(WWW_DIR, "epg.xml.gz")
+    if os.path.exists(old_gz):
+        shutil.copy2(old_gz, os.path.join(backup_dir, f"epg.xml.gz.{time.strftime('%Y%m%d-%H%M%S')}.bak"))
+
+    final_xml = os.path.join(WWW_DIR, "epg.xml")
+    final_gz = os.path.join(WWW_DIR, "epg.xml.gz")
+    compat_gz = os.path.join(WWW_DIR, "t.xml.gz")
+    shutil.move(out_xml, final_xml)
+    with open(final_xml, "rb") as src, gzip.open(final_gz, "wb", compresslevel=6) as dst:
+        shutil.copyfileobj(src, dst)
+    shutil.copy2(final_gz, compat_gz)
+    shutil.rmtree(work, ignore_errors=True)
+
+    print(
+        f"OK: {len(all_channel_defs)} channels, {len(all_programmes)} programmes, "
+        f"{ok_sources}/{total_sources} sources, {matched_source_channels} source-channel matches"
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)

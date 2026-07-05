@@ -1,0 +1,104 @@
+#!/bin/sh
+printf 'Content-Type: application/json\n\n'
+esc(){ printf '%s' "$1" | sed 's/\\/\\\\/g;s/"/\\"/g;s/\r//g;s/\n/ /g'; }
+lan_ip=$(uci -q get network.lan.ipaddr 2>/dev/null || true)
+[ -n "$lan_ip" ] || lan_ip=$(sed -n '1{s/[[:space:]]//g;p;q}' /etc/soso-iptv-lan-ip 2>/dev/null)
+[ -n "$lan_ip" ] || lan_ip=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)
+[ -n "$lan_ip" ] || lan_ip=192.168.1.1
+iptv_iface=$(cat /etc/iptv-input-iface 2>/dev/null)
+[ -n "$iptv_iface" ] || iptv_iface=$(uci -q get network.wan.device || echo eth1)
+wan_device=$(uci -q get network.wan.device || echo br-iptv)
+capture_iface=$(cat /etc/iptv-capture-iface 2>/dev/null)
+[ -n "$capture_iface" ] || capture_iface=eth2
+iptv_proto=$(uci -q get network.wan.proto || echo dhcp)
+iptv_ip=$(ifstatus wan 2>/dev/null | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
+[ -n "$iptv_ip" ] || iptv_ip=$(ip -4 addr show "$wan_device" 2>/dev/null | awk '/inet /{print $2; exit}')
+[ -n "$iptv_ip" ] || iptv_ip=$(ip -4 addr show br-iptv 2>/dev/null | awk '/inet /{print $2; exit}')
+[ -n "$iptv_ip" ] || iptv_ip=$(ip -4 addr show "$iptv_iface" 2>/dev/null | awk '/inet /{print $2; exit}')
+link=$(cat /sys/class/net/$iptv_iface/operstate 2>/dev/null | tr a-z A-Z)
+capture_link=$(cat /sys/class/net/$capture_iface/operstate 2>/dev/null | tr a-z A-Z)
+proxy="stopped"
+if pidof udpxy >/dev/null; then proxy="running(udpxy)"; elif pidof msd_lite >/dev/null; then proxy="running(msd_lite)"; elif [ "$link" != "UP" ]; then proxy="waiting for IPTV link"; fi
+cap="STOPPED"; pgrep -x tcpdump >/dev/null && cap="RUNNING"
+tv_count=$(grep -c '^#EXTINF' /www/tv.m3u 2>/dev/null || echo 0)
+new_count=$(grep -c '^#EXTINF' /www/new.m3u 2>/dev/null || echo 0)
+mac=$(uci -q get network.wan.macaddr || cat /sys/class/net/$iptv_iface/address 2>/dev/null)
+hostname=$(uci -q get network.wan.hostname)
+vendorid=$(uci -q get network.wan.vendorid)
+clientid=$(uci -q get network.wan.clientid)
+multicast_route=$(ip route get 239.21.1.120 2>/dev/null | head -1)
+nikki_state=$(ip route get 239.21.1.120 2>/dev/null | grep -q nikki && echo proxy || echo direct)
+iptv_fw_packets=$(nft list chain inet fw4 input_wan 2>/dev/null | awk '/IPTV-Multicast-In/{for(i=1;i<=NF;i++)if($i=="packets"){print $(i+1); exit}}')
+[ -n "$iptv_fw_packets" ] || iptv_fw_packets=0
+if curl -m 3 -fsS http://127.0.0.1:8080/epg.xml.gz >/dev/null 2>&1 || curl -m 3 -fsS http://127.0.0.1:8080/t.xml.gz >/dev/null 2>&1; then
+  epg_status=ok
+else
+  epg_status=fail
+fi
+stats_dir=/tmp/iptv
+stats_file=$stats_dir/play-stats.db
+channel_stats_file=$stats_dir/play-channel-stats.tsv
+persist_dir=/etc/soso-iptv-stats
+persist_stats=$persist_dir/play-stats.db
+persist_channels=$persist_dir/play-channel-stats.tsv
+persist_flag=$stats_dir/play-stats.lastflush
+mkdir -p "$stats_dir" "$persist_dir" 2>/dev/null || true
+[ -s "$stats_file" ] || { [ -s "$persist_stats" ] && cp "$persist_stats" "$stats_file" 2>/dev/null; }
+[ -s "$channel_stats_file" ] || { [ -s "$persist_channels" ] && cp "$persist_channels" "$channel_stats_file" 2>/dev/null; }
+now=$(date +%s)
+rx_iface=br-iptv
+[ -d /sys/class/net/$rx_iface ] || rx_iface="$iptv_iface"
+rx_bytes=$(cat /sys/class/net/$rx_iface/statistics/rx_bytes 2>/dev/null || echo 0)
+active_clients=$(netstat -tn 2>/dev/null | awk '$4 ~ /:12123$/ && $6 == "ESTABLISHED"{c++} END{print c+0}')
+last_ts=0; last_rx=0; total_sec=0; total_bytes=0; max_clients=0
+[ -s "$stats_file" ] && . "$stats_file" 2>/dev/null || true
+case "$last_ts$last_rx$total_sec$total_bytes$max_clients" in *[!0-9]*|'') last_ts=0; last_rx=0; total_sec=0; total_bytes=0; max_clients=0 ;; esac
+dt=$((now-last_ts))
+drx=$((rx_bytes-last_rx))
+[ "$dt" -lt 0 ] && dt=0
+[ "$dt" -gt 900 ] && dt=0
+[ "$drx" -lt 0 ] && drx=0
+if [ "$active_clients" -gt 0 ] && [ "$dt" -gt 0 ]; then
+  total_sec=$((total_sec+dt))
+  total_bytes=$((total_bytes+drx))
+fi
+[ "$active_clients" -gt "$max_clients" ] && max_clients="$active_clients"
+active_dests=""
+if [ "$active_clients" -gt 0 ]; then
+  active_dests=$(curl -m 2 -fsS "http://$lan_ip:12123/status/" 2>/dev/null | grep -Eo '(22[4-9]|23[0-9])[.][0-9]+[.][0-9]+[.][0-9]+:[0-9]+' | sort -u)
+fi
+if [ -n "$active_dests" ] && [ "$dt" -gt 0 ]; then
+  tmp_add=$stats_dir/play-channel-add.$$
+  tmp_old=$stats_dir/play-channel-old.$$
+  tmp_new=$stats_dir/play-channel-new.$$
+  : > "$tmp_add"
+  printf '%s\n' "$active_dests" | while read -r addr; do
+    [ -n "$addr" ] || continue
+    name=$(awk -v addr="$addr" '
+      /^#EXTINF/ { prev=$0; sub(/^.*,/,"",prev); next }
+      index($0, addr) > 0 { print prev; exit }
+    ' /www/new.m3u /www/new-logo.m3u 2>/dev/null)
+    [ -n "$name" ] || name="$addr"
+    printf '%s\t%s\n' "$name" "$dt" >> "$tmp_add"
+  done
+  [ -s "$channel_stats_file" ] && cp "$channel_stats_file" "$tmp_old" || : > "$tmp_old"
+  awk -F'\t' '
+    NR==FNR { add[$1]+=$2; next }
+    { seen[$1]=1; print $1 "\t" ($2 + add[$1]) }
+    END { for (n in add) if (!(n in seen)) print n "\t" add[n] }
+  ' "$tmp_add" "$tmp_old" > "$tmp_new" && mv "$tmp_new" "$channel_stats_file"
+  rm -f "$tmp_add" "$tmp_old" "$tmp_new"
+fi
+cat > "$stats_file" <<EOF
+last_ts=$now
+last_rx=$rx_bytes
+total_sec=$total_sec
+total_bytes=$total_bytes
+max_clients=$max_clients
+EOF
+cp "$stats_file" "$persist_stats" 2>/dev/null && echo "$now" > "$persist_flag"
+[ -s "$channel_stats_file" ] && cp "$channel_stats_file" "$persist_channels" 2>/dev/null
+play_total_mb=$((total_bytes/1024/1024))
+top_channels=$(sort -t "$(printf '\t')" -k2,2nr "$channel_stats_file" 2>/dev/null | head -5 | awk -F'\t' '{printf "%s%s=%s", sep, $1, $2; sep="|"}')
+printf '{"lan_ip":"%s","iptv_iface":"%s","iptv_link":"%s","capture_iface":"%s","capture_link":"%s","iptv_ip":"%s","proxy_status":"%s","capture_status":"%s","tv_count":"%s","new_count":"%s","mac":"%s","hostname":"%s","vendorid":"%s","clientid":"%s","proto":"%s","multicast_route":"%s","nikki_state":"%s","iptv_fw_packets":"%s","epg_status":"%s","play_active_clients":"%s","play_total_seconds":"%s","play_total_mb":"%s","play_max_clients":"%s","play_source":"%s","play_top_channels":"%s"}\n' \
+"$(esc "$lan_ip")" "$(esc "$iptv_iface")" "$(esc "$link")" "$(esc "$capture_iface")" "$(esc "$capture_link")" "$(esc "$iptv_ip")" "$(esc "$proxy")" "$(esc "$cap")" "$(esc "$tv_count")" "$(esc "$new_count")" "$(esc "$mac")" "$(esc "$hostname")" "$(esc "$vendorid")" "$(esc "$clientid")" "$(esc "$iptv_proto")" "$(esc "$multicast_route")" "$(esc "$nikki_state")" "$(esc "$iptv_fw_packets")" "$(esc "$epg_status")" "$(esc "$active_clients")" "$(esc "$total_sec")" "$(esc "$play_total_mb")" "$(esc "$max_clients")" "$(esc "本地udpxy连接数+$rx_iface入口RX流量增量+udpxy状态页频道地址")" "$(esc "$top_channels")"

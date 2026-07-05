@@ -1,0 +1,16 @@
+# SOSO IPTV Gateway 页面展示配置
+# 规则：
+# 1. # 开头为备注，不会显示在页面。
+# 2. 普通键值写法：key: value
+# 3. links 每行一个入口：- title: 名称 | url: 地址 | note: 备注
+# 4. 修改后在页面点“保存 YAML 配置”，刷新页面即可看到效果。
+
+title: IPTV 家庭网关
+author: SOSO
+subtitle: 旁路由版：IPTV 口接光猫，USB 网口接运营商 IPTV 盒子；抓包从 USB 盒子侧进行，组播源数据不经过 Nikki/OpenClash 代理。
+logoImage:
+
+links:
+  - title: 本地直播源 new | url: http://ROUTER-IP:8080/new.m3u | note: 基础节目单
+  - title: 本地带台标 new-logo | url: http://ROUTER-IP:8080/new-logo.m3u | note: 推荐给播放器使用
+  - title: 本地 EPG | url: http://ROUTER-IP:8080/epg.xml.gz | note: 旁路由本地 EPG

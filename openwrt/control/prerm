@@ -1,0 +1,8 @@
+#!/bin/sh
+
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+/etc/init.d/iptv-tc-bridge stop >/dev/null 2>&1 || true
+/etc/init.d/iptv-tc-bridge disable >/dev/null 2>&1 || true
+
+exit 0

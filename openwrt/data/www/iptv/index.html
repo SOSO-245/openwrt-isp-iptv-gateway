@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPTV 家庭网关</title>
+<link rel="icon" type="image/svg+xml" href="/iptv/assets/favicon.svg">
+<style>
+:root{color-scheme:dark;--accent:#2f80ed;--bg:#101821;--panel:#182331;--panel2:#202e3d;--panelAlpha:92%;--text:#e9eef5;--muted:#9aa8b7;--ok:#25d28a;--bad:#ff6464;--warn:#f5b84b;--line:#2d3b4c;--image:none;--logo:none}*{box-sizing:border-box}body{margin:0;background:linear-gradient(color-mix(in srgb,var(--bg) 86%,transparent),color-mix(in srgb,var(--bg) 86%,transparent)),var(--image),var(--bg);background-size:cover;background-attachment:fixed;color:var(--text);font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1320px;margin:0 auto;padding:22px}.hero{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}.brand{display:flex;align-items:center;gap:14px}.top-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.nav{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:8px;padding:8px;margin:0 0 18px;display:flex;gap:8px;flex-wrap:wrap}.nav a{color:var(--text);text-decoration:none;background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);padding:7px 10px;border-radius:7px}.logo{width:58px;height:58px;border-radius:8px;border:1px solid var(--line);background:var(--logo),linear-gradient(135deg,var(--accent),#20c997);background-size:cover;background-position:center;display:grid;place-items:center;color:white;font-weight:800;letter-spacing:0}.logo span{display:block}.has-logo .logo span{display:none}.titleblock h1{margin:0 0 3px;font-size:28px}.author{color:var(--muted);font-size:13px}.author b{color:var(--text);font-weight:700}h1{margin:0 0 4px}h2{font-size:20px;margin:26px 0 12px}.sub{color:var(--muted);margin-bottom:18px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.tri{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.capture-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px;align-items:stretch}.capture-layout>.card{height:100%}.capture-layout>.card:last-child{display:flex;flex-direction:column}.card{background:color-mix(in srgb,var(--panel) var(--panelAlpha),transparent);border:1px solid var(--line);border-radius:8px;padding:14px;min-height:78px;box-shadow:0 8px 24px rgba(0,0,0,.12);backdrop-filter:blur(4px)}.card b{display:block;font-size:16px;margin-bottom:6px}.card span,.muted{color:var(--muted)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.danger-card{animation:pulseBad 1.2s infinite;border-color:var(--bad)}@keyframes pulseBad{0%,100%{box-shadow:0 0 0 0 rgba(255,100,100,.15)}50%{box-shadow:0 0 0 4px rgba(255,100,100,.45)}}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}.links a{display:block;color:#9dccff;text-decoration:none;margin:3px 0}.links a:hover{text-decoration:underline}.link-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0}.link-main{min-width:0}.link-main a{display:block;color:#9dccff;text-decoration:none;overflow-wrap:anywhere}.copy{flex:0 0 auto;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 82%,#000);color:var(--text);border-radius:7px;padding:7px 10px;cursor:pointer}.copy:active{transform:translateY(1px) scale(.98)}.btns{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.btn{border:0;background:var(--accent);color:white;border-radius:7px;padding:10px 14px;cursor:pointer;font-weight:700;transition:transform .08s ease,filter .15s ease,box-shadow .15s ease;box-shadow:0 5px 14px color-mix(in srgb,var(--accent) 25%,transparent)}.btn:hover{filter:brightness(1.08)}.btn:active{transform:translateY(1px) scale(.98);filter:brightness(.95)}.btn.secondary{background:color-mix(in srgb,var(--panel2) 78%,var(--accent));box-shadow:none}.btn.danger{background:#c2410c}.btn.okbtn{background:#15803d}.btn.redbtn{background:#b91c1c}.btn:disabled{opacity:.45;cursor:not-allowed}input,select,textarea{width:100%;background:color-mix(in srgb,var(--bg) 84%,#000);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px}input[type=range]{padding:0}textarea{min-height:90px}.editor{min-height:320px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field label{display:block;color:var(--muted);margin:0 0 6px}.log{white-space:pre-wrap;background:color-mix(in srgb,var(--bg) 88%,#000);border:1px solid var(--line);border-radius:8px;padding:12px;min-height:120px;max-height:360px;overflow:auto}.capture-log{flex:1;min-height:360px;max-height:none}.pill{display:inline-flex;align-items:center;gap:6px;background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);border:1px solid var(--line);padding:6px 9px;border-radius:999px;color:var(--muted);margin:3px 6px 3px 0}.small{font-size:13px;color:var(--muted)}.hidden{display:none}.wiki h3{margin:16px 0 6px}.wiki p{margin:6px 0;color:var(--muted)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.58);display:none;align-items:center;justify-content:center;z-index:20}.modal.show{display:flex}.modal-panel{width:min(760px,92vw);max-height:88vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px}.login{position:fixed;inset:0;z-index:30;background:#0b1118;display:flex;align-items:center;justify-content:center}.login .card{width:min(420px,92vw)}canvas{display:block;width:100%;height:220px;background:color-mix(in srgb,var(--panel) var(--panelAlpha),var(--bg));border:1px solid var(--line);border-radius:8px}@media(max-width:1000px){.grid,.row,.tri,.form,.capture-layout{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column}.top-actions{justify-content:flex-start}}
+input[type=checkbox]{width:20px;height:20px;min-width:20px;padding:0;accent-color:var(--accent);cursor:pointer}.invalid-row{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;justify-content:start}.invalid-row input{justify-self:start}.invalid-row .link-main b{display:block;color:var(--text);font-size:14px;margin:0 0 2px}.invalid-row .link-main a{font-size:12px}
+</style>
+<style id="redesign">
+body{font-size:14.5px}
+.wrap{max-width:1180px;padding:20px 22px 40px}
+.titleblock h1{font-size:24px;letter-spacing:.2px}
+.logo{border-radius:13px}
+.tabs{position:sticky;top:0;z-index:6;display:flex;gap:5px;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:12px;padding:6px;margin:0 0 16px;overflow-x:auto}
+.tab{flex:1;min-width:max-content;border:0;background:transparent;color:var(--muted);font-size:14px;font-weight:700;padding:10px 14px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.tab:hover{color:var(--text)}
+.tab.on{background:var(--accent);color:#fff;box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 30%,transparent)}
+.pane{display:none}
+.pane.on{display:block;animation:fade .2s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.healthbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border:1px solid var(--line);border-left:3px solid var(--muted);border-radius:11px;padding:11px 15px;margin:0 0 16px;background:color-mix(in srgb,var(--panel) var(--panelAlpha),transparent)}
+.healthbar.ok{border-left-color:var(--ok)}.healthbar.warn{border-left-color:var(--warn)}.healthbar.bad{border-left-color:var(--bad)}
+.hb-title{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:800}
+.hb-led{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.healthbar.ok .hb-led{background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}
+.healthbar.warn .hb-led{background:var(--warn);box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 22%,transparent)}
+.healthbar.bad .hb-led{background:var(--bad);box-shadow:0 0 0 4px color-mix(in srgb,var(--bad) 25%,transparent)}
+.hb-item{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.hb-item b{color:var(--text);font-weight:700}
+.hb-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.hb-dot.ok{background:var(--ok)}.hb-dot.warn{background:var(--warn)}.hb-dot.bad{background:var(--bad)}
+#statusCards .card{position:relative;display:flex;flex-direction:column;gap:6px;min-height:auto}
+#statusCards .card b{font-size:12.5px;color:var(--muted);font-weight:600;margin:0}
+#statusCards .card>span{font-size:16px;font-weight:700}
+#statusCards .card .sled{position:absolute;top:13px;right:13px;width:9px;height:9px;border-radius:50%;background:var(--muted)}
+#statusCards .card .sled.ok{background:var(--ok)}#statusCards .card .sled.warn{background:var(--warn)}#statusCards .card .sled.bad{background:var(--bad)}
+h2{font-size:17px;margin:22px 0 11px;display:flex;align-items:center;gap:8px}
+h2::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--accent);display:inline-block}
+.card{border-radius:13px;box-shadow:0 6px 20px rgba(0,0,0,.10)}
+.btn{border-radius:9px}
+.btn.secondary{background:color-mix(in srgb,var(--panel2) 70%,transparent);color:var(--text);border:1px solid var(--line);box-shadow:none}
+.btn.secondary:hover{background:var(--panel2);filter:none}
+details.help{background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);border:1px solid var(--line);border-radius:10px;margin:10px 0;overflow:hidden}
+details.help>summary{cursor:pointer;padding:10px 13px;font-size:13px;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px;font-weight:600}
+details.help>summary::-webkit-details-marker{display:none}
+details.help>summary::before{content:"\25B8";transition:transform .15s;display:inline-block}
+details.help[open]>summary::before{transform:rotate(90deg)}
+details.help[open]>summary{color:var(--text);border-bottom:1px solid var(--line)}
+details.help .hc{padding:11px 13px;font-size:13px;color:var(--muted)}
+details.help .hc p{margin:6px 0}
+@media(max-width:760px){.wrap{padding:14px}.tab{font-size:13px;padding:9px 10px}}
+.topo-flow{display:flex;align-items:stretch;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.tnode{flex:1;min-width:84px;display:flex;align-items:center;gap:8px;background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);border:1px solid var(--line);border-left:3px solid var(--muted);border-radius:9px;padding:9px 11px}
+.tnode>div{display:flex;flex-direction:column;min-width:0}
+.tnode b{font-size:13px;font-weight:700;white-space:nowrap}
+.tnode span:last-child{font-size:11px;color:var(--muted);white-space:nowrap}
+.tnode .tdot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.tnode.ok{border-left-color:var(--ok)}.tnode.ok .tdot{background:var(--ok)}
+.tnode.warn{border-left-color:var(--warn)}.tnode.warn .tdot{background:var(--warn)}
+.tnode.bad{border-left-color:var(--bad);animation:pulseBad 1.4s infinite}.tnode.bad .tdot{background:var(--bad)}
+.tarrow{display:flex;align-items:center;color:var(--muted);font-weight:700;font-size:16px;padding:0 2px}
+.tarrow.bad{color:var(--bad)}
+.topo-note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.7}
+.topo-note .kw{font-weight:700}
+.topo-note .kw.ok{color:var(--ok)}.topo-note .kw.bad{color:var(--bad)}
+.troute{margin:0 0 12px}
+.tlabel{display:inline-block;font-size:12px;font-weight:700;color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:999px;padding:3px 10px;margin:0 0 7px}
+.troute .topo-flow{margin:0}
+.row.split{grid-template-columns:minmax(0,.82fr) minmax(0,1.3fr)}
+@media(max-width:1000px){.row.split{grid-template-columns:1fr}}
+.logo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:12px;max-height:560px;overflow:auto}
+.logo-item{background:color-mix(in srgb,var(--panel2) var(--panelAlpha),transparent);border:1px solid var(--line);border-radius:10px;padding:9px;text-align:center;font-size:12px}
+.logo-item img{width:62px;height:62px;object-fit:contain;background:#0b1118;border-radius:8px;border:1px solid var(--line)}
+.logo-item .no{width:62px;height:62px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);background:#0b1118;border-radius:8px;border:1px dashed var(--line);font-size:11px}
+.logo-item .nm{display:block;margin:6px 0 7px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logo-item .ops{display:flex;gap:5px;justify-content:center}
+.logo-item .ops button{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);cursor:pointer}
+	.logo-item .ops button:hover{border-color:var(--accent)}
+	.presets{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+	.preset{cursor:pointer;border:1px solid var(--line);border-radius:9px;padding:7px 11px;display:flex;align-items:center;gap:7px;background:color-mix(in srgb,var(--panel2) 70%,transparent);color:var(--text);font-size:13px;font-weight:600}
+	.preset:hover{border-color:var(--accent)}
+	.preset .sw{width:14px;height:14px;border-radius:4px;flex:0 0 auto}
+	.epg-board{display:grid;grid-template-columns:1fr;gap:12px}
+	.epg-config-card{padding:18px}
+	.epg-text-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start;margin-top:12px}
+	.epg-text-grid .field{display:grid;grid-template-rows:32px 230px minmax(54px,auto);height:100%;align-items:start}
+	.epg-text-grid label{height:32px;min-height:32px;display:flex;align-items:flex-end;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+	.epg-text-grid textarea{height:230px;min-height:230px!important;font-size:13px;line-height:1.55;resize:vertical;display:block}
+	.epg-note{margin-top:8px;min-height:46px}
+	.epg-schedule-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:12px}
+	.epg-actions{margin-top:14px}
+	.epg-log-card{min-height:0}
+	.epg-log-card .log{min-height:180px;max-height:260px}
+	@media(max-width:1100px){.epg-text-grid{grid-template-columns:1fr}.epg-schedule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+	@media(max-width:640px){.epg-schedule-grid{grid-template-columns:1fr}}
+	</style>
+</head>
+<body>
+<div id="loginLayer" class="login">
+  <div class="card">
+    <h2>IPTV 管理登录</h2>
+    <div class="field"><label>账号</label><input id="loginUser" value="admin" autocomplete="username"></div>
+    <div class="field"><label>密码</label><input id="loginPass" type="password" autocomplete="current-password"></div>
+    <div class="btns"><button class="btn" title="验证账号密码后进入管理页面" onclick="login()">登录</button></div>
+    <div class="small">新安装默认账号密码为 <span class="mono">admin / admin</span>。登录后可在右上角“账号”里修改。</div>
+  </div>
+</div>
+<div id="themeModal" class="modal">
+  <div class="modal-panel">
+    <h2>主题设置</h2>
+    <div class="small" style="margin-bottom:8px">快速预设（点击即预览，满意后点“保存主题”）：</div>
+    <div class="presets">
+      <button type="button" class="preset" onclick="applyPreset('#2f80ed','#101821')"><span class="sw" style="background:#2f80ed"></span>默认蓝</button>
+      <button type="button" class="preset" onclick="applyPreset('#7c5cff','#14121f')"><span class="sw" style="background:#7c5cff"></span>暗夜紫</button>
+      <button type="button" class="preset" onclick="applyPreset('#15c47e','#0e1a15')"><span class="sw" style="background:#15c47e"></span>翠绿</button>
+      <button type="button" class="preset" onclick="applyPreset('#ff6b3d','#1a1310')"><span class="sw" style="background:#ff6b3d"></span>橙红</button>
+      <button type="button" class="preset" onclick="applyPreset('#1fb6d6','#0d1620')"><span class="sw" style="background:#1fb6d6"></span>海蓝</button>
+      <button type="button" class="preset" onclick="applyPreset('#e84d8a','#180f15')"><span class="sw" style="background:#e84d8a"></span>樱桃粉</button>
+      <button type="button" class="preset" onclick="applyPreset('#5b8cff','#15181d')"><span class="sw" style="background:#5b8cff"></span>石墨</button>
+      <button type="button" class="preset" onclick="applyPreset('#f5b84b','#181410')"><span class="sw" style="background:#f5b84b"></span>琥珀金</button>
+    </div>
+    <div class="form">
+      <div class="field"><label>主题颜色</label><input id="accent" type="color" value="#2f80ed"></div>
+      <div class="field"><label>背景颜色</label><input id="bg" type="color" value="#101821"></div>
+      <div class="field"><label>背景图片 URL（可选）</label><input id="bgImage" placeholder="https://... 或留空"></div>
+      <div class="field"><label>Logo 图片 URL（可选）</label><input id="logoImage" placeholder="https://... 或留空"></div>
+      <div class="field"><label>上传本地背景图（可选）</label><input id="bgFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
+      <div class="field"><label>上传本地 Logo（可选）</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
+      <div class="field"><label>面板透明度 <span id="alphaValue">92%</span></label><input id="panelAlpha" type="range" min="15" max="100" step="1" value="92" oninput="previewAlpha()"></div>
+    </div>
+    <div class="btns">
+      <button class="btn" title="保存到路由器本地文件，刷新后仍生效" onclick="saveTheme()">保存主题</button>
+      <button class="btn danger" title="需要连续点击两次才会恢复默认，防止误触" onclick="resetThemeGuard()">恢复默认</button>
+      <button class="btn secondary" title="关闭主题设置窗口" onclick="toggleTheme(false)">取消</button>
+    </div>
+  </div>
+</div>
+<div id="accountModal" class="modal">
+  <div class="modal-panel">
+    <h2>账号设置</h2>
+    <div class="form">
+      <div class="field"><label>当前账号</label><input id="oldUser" autocomplete="username"></div>
+      <div class="field"><label>当前密码</label><input id="oldPass" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>新账号</label><input id="newUser" autocomplete="username"></div>
+      <div class="field"><label>新密码</label><input id="newPass" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>确认新密码</label><input id="newPass2" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="btns">
+      <button class="btn" title="验证当前账号密码后保存新登录信息" onclick="saveAccount()">保存账号</button>
+      <button class="btn secondary" title="关闭账号设置窗口" onclick="toggleAccount(false)">取消</button>
+    </div>
+    <div class="small">新安装默认账号密码为 <span class="mono">admin / admin</span>。修改后当前浏览器会自动使用新账号保持登录。</div>
+  </div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="brand">
+      <div class="logo"><span>IPTV</span></div>
+      <div class="titleblock">
+        <h1 id="pageTitle">IPTV 家庭网关</h1>
+        <div class="author">作者：<b id="pageAuthor">SOSO</b></div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <a class="btn secondary" title="打开独立 Wiki 使用说明" href="/iptv/wiki.html" target="_blank">本地 Wiki</a>
+      <button class="btn secondary" title="修改 IPTV 管理页面登录账号和密码" onclick="toggleAccount(true)">账号</button>
+      <button class="btn secondary" title="打开主题颜色、背景、透明度设置" onclick="toggleTheme(true)">主题</button>
+      <button class="btn" title="检查网口、代理、EPG、组播绕开代理状态" onclick="runSelfCheck()">一键自检</button>
+      <button class="btn secondary" title="抓取 DHCP/IGMP/ARP，分析播放异常原因" onclick="runAnalyze()">播放异常分析</button>
+    </div>
+  </div>
+  <div class="tabs" id="tabBar">
+    <button type="button" class="tab on" data-tab="overview" onclick="showTab('overview',this)">总览</button>
+    <button type="button" class="tab" data-tab="playlist" onclick="showTab('playlist',this)">节目单</button>
+    <button type="button" class="tab" data-tab="epg" onclick="showTab('epg',this)">本地EPG管理</button>
+    <button type="button" class="tab" data-tab="capture" onclick="showTab('capture',this)">抓包发现</button>
+    <button type="button" class="tab" data-tab="network" onclick="showTab('network',this)">网络与接口</button>
+    <button type="button" class="tab" data-tab="advanced" onclick="showTab('advanced',this)">高级与日志</button>
+  </div>
+  <div class="healthbar" id="healthBar"><span class="hb-title"><span class="hb-led"></span><span id="hbText">读取状态中…</span></span></div>
+  <section class="pane on" data-tab="overview">
+  <div class="sub" id="pageSubtitle">旁路由版：IPTV 口接光猫，LAN 口向家庭内网提供节目单、EPG 信息和 HTTP 单播。组播源数据应只从 <span class="mono">eth1</span> 进入，不经过 Nikki/OpenClash 代理。</div>
+  <div class="grid" id="statusCards"></div>
+
+  <h2 id="accessSection">访问地址</h2>
+  <div class="grid links" id="linkGrid"></div>
+
+  <h2 id="playStats">播放统计</h2>
+  <div class="row">
+    <div class="card">
+      <b>播放数据</b>
+      <canvas id="playChart" width="640" height="180"></canvas>
+      <div id="playStatsText" class="small">暂无播放日志接入。接入播放器日志后，这里只展示播放时长、频道播放次数和观看设备。</div>
+    </div>
+    <div class="card">
+      <b>常看频道</b>
+      <div id="playStatsList" class="small">等待播放记录...</div>
+    </div>
+  </div>
+
+  <h2 id="topology">网络拓扑与状态</h2>
+  <div class="row split">
+    <div class="card">
+      <b>状态图表</b>
+      <canvas id="statusChart" width="640" height="180"></canvas>
+      <div id="statusChartText" class="small">网络侧状态：频道数量、防火墙命中、盒子网口、组播绕开代理。</div>
+    </div>
+    <div class="card">
+      <b>实时拓扑</b>
+      <div id="topologyView" class="small">等待状态刷新...</div>
+    </div>
+  </div>
+
+  </section>
+  <div id="wikiPanel" class="card wiki hidden">
+    <h2>本地 Wiki</h2>
+    <h3>这套 IPTV 网关解决什么问题</h3>
+    <p>运营商 IPTV 通常不是普通公网视频流，而是通过光猫 IPTV 口下发 DHCP、IGMP 和 UDP/RTP 组播。普通播放器无法直接跨内网使用这些组播地址，所以旁路由负责把运营商盒子侧看到的原始组播信息抓出来，整理成家庭播放器能使用的节目单。</p>
+    <p>当前设计优先保证运营商 IPTV 盒子能正常工作，再顺手抓取频道地址并生成节目单。也就是说，这套方案不是替代运营商盒子认证，而是让旁路由“旁听”盒子的频道请求。</p>
+
+    <h3>设备连接方式</h3>
+    <p><b>光猫 IPTV 口</b> 接旁路由的 IPTV 入口网口，当前按 <span class="mono">eth1</span> 使用。</p>
+    <p><b>运营商 IPTV 盒子</b> 接旁路由的 USB 网口，当前按 <span class="mono">eth2</span> 使用。页面状态里的“盒子侧 USB 抓包口”为 UP，才表示盒子侧链路已经接通。</p>
+    <p><b>家庭内网设备</b> 继续通过原来的 LAN/Wi-Fi 访问节目单，例如播放器、电视、手机、电脑访问 <span class="mono">http://路由器IP:8080/new-logo.m3u</span>。</p>
+
+    <h3>旁路由上的实际配置</h3>
+    <p><span class="mono">br-iptv</span> 是 IPTV 专用桥设备，包含 <span class="mono">eth1</span> 和 <span class="mono">eth2</span>。它不承担家庭 LAN 网关职责，只处理 IPTV 侧链路。</p>
+    <p><span class="mono">/etc/iptv-capture-iface</span> 保存抓包口，默认是 <span class="mono">eth2</span>，也就是 USB 网口/盒子侧。</p>
+    <p><span class="mono">/etc/init.d/iptv-tc-bridge</span> 使用 Linux <span class="mono">tc mirred redirect</span> 做 eth1 与 eth2 的二层互转，让盒子尽量像直连光猫 IPTV 口一样拿地址、发 IGMP、收组播。</p>
+    <p><span class="mono">udpxy</span> 当前默认不启用，因为你的现阶段目标是保证盒子直通和节目单生成，不让旁路由主动抢 IPTV DHCP。后续如果确认运营商允许多终端或需要旁路由直接转单播，再启用更合适。</p>
+
+    <h3>工作原理</h3>
+    <p>盒子播放频道时，会先向 IPTV 网络发送 IGMP 加组请求，然后光猫 IPTV 口侧会出现对应的 UDP/RTP 组播流，例如 <span class="mono">239.x.x.x:端口</span>。</p>
+    <p>点击“开始抓原始组播”后，旁路由在 USB 盒子侧网口抓包，只记录抓包期间真正出现过的组播地址。同时会轻量监听盒子侧明文 HTTP/API 流量，尝试识别频道名称和 <span class="mono">png/jpg/webp</span> 台标资源。</p>
+    <p>点击“停止分析并自动补频道”后，系统会把本次抓到的地址和现有基础节目单 <span class="mono">new.m3u</span> 做差异比对。已经存在的频道不会重复写入；如果同时识别到频道名或台标，会直接更新现有 M3U 条目的 <span class="mono">tvg-name</span>、<span class="mono">tvg-logo</span> 和显示名称。</p>
+    <p>如果抓包没有直接拿到台标，但能识别到频道名，系统会继续从旁路由本地台标库、在线 EPG 图标和可选图片模板里尝试补全。外部工具箱只在手动配置主机后作为可选素材源。</p>
+    <p>新发现的地址会追加到 <span class="mono">new.m3u</span> 和 <span class="mono">new.txt</span>。如果识别到了频道名称和台标，新条目会按原有 <span class="mono">#EXTINF</span> 格式写入这些标注，并自动刷新 <span class="mono">new-logo.m3u</span>。</p>
+
+    <h3>第一次设置流程</h3>
+    <p>1. 先确认光猫 IPTV 口、旁路由 IPTV 入口、USB 网口、运营商盒子的线都接好。</p>
+    <p>2. 打开本页面，先看顶部状态卡：<span class="mono">eth1</span>、<span class="mono">br-iptv</span> 应该 UP；盒子开机并插好时 <span class="mono">eth2</span> 应该 UP。</p>
+    <p>3. 点“一键自检”，确认 tc 二层透传规则存在，EPG 能访问，节目单数量正常。</p>
+    <p>4. 在运营商盒子上播放直播频道，再点“播放异常分析”，应该能看到 DHCP、ARP 或 IGMP 活动。</p>
+    <p>5. 点“开始抓原始组播”，在盒子上切换缺失频道，每个频道停留 3-5 秒，再点“停止分析并自动补频道”。</p>
+    <p>6. 播放器使用 <span class="mono">new-logo.m3u</span>，如果频道顺序不满意，在“节目表在线编辑”里调整保存。</p>
+
+    <h3>访问地址怎么用</h3>
+    <p><b>本地直播源</b> 给家里局域网播放器使用，优先选 <span class="mono">new-logo.m3u</span>，因为它包含台标信息。</p>
+    <p><b>本地 EPG</b> 由旁路由汇总在线 EPG 源生成，播放器优先访问旁路由本地地址；外部 php-epg/NAS 只是可选追加源。</p>
+    <p><b>外部访问已移除</b>：本工具只保留内网入口。公网反代不再作为推荐配置，减少误暴露管理页和节目单的风险。</p>
+    <p>每个地址右侧的“复制”按钮可以直接复制 URL，适合粘贴到播放器、电视 App 或远程设备里。</p>
+
+    <h3>节目表在线编辑提示</h3>
+    <p>M3U 一个频道通常由两行组成：第一行 <span class="mono">#EXTINF</span> 是频道名称、台标等信息，第二行是播放地址。调整顺序时这两行要一起移动。</p>
+    <p>保存 <span class="mono">new.m3u</span> 或 <span class="mono">new-logo.m3u</span> 时，系统会先备份旧文件。误改后可以在节目表编辑器的历史版本里一键恢复。</p>
+
+    <h3>后台 YAML 配置</h3>
+    <p>页面标题、作者、说明、Logo、访问地址列表由 <span class="mono">/etc/soso-iptv-gateway.yaml</span> 控制。适配不同设备时，优先改这个文件，不需要改 HTML。</p>
+    <p>普通字段写法：<span class="mono">title: IPTV 家庭网关</span>。链接字段写法：<span class="mono">- title: 名称 | url: 地址 | note: 备注</span>。以 <span class="mono">#</span> 开头的是备注。</p>
+
+    <h3>主题和皮肤</h3>
+    <p>主题颜色、背景颜色、背景图、Logo 和面板透明度会保存到路由器本地配置。上传的背景图和 Logo 会放在 <span class="mono">/www/iptv/assets/</span>，刷新页面后仍会生效。</p>
+    <p>如果背景图较花，可以把面板透明度调高；如果想让背景更明显，可以把透明度调低。</p>
+
+    <h3>一键自检怎么看</h3>
+    <p><b>网口状态</b>：eth1 是光猫 IPTV 侧，eth2 是 USB 盒子侧，br-iptv 是桥。eth2 DOWN 通常表示盒子没开机、线没插好、USB 网卡未识别或盒子网口没有链路。</p>
+    <p><b>tc 二层透传规则</b>：应看到 eth2 -> eth1 和 eth1 -> eth2 两个 redirect。缺一边时，盒子可能拿不到 IPTV 地址或无法收到回包。</p>
+    <p><b>节目单数量</b>：用于快速判断节目单有没有被清空或生成异常。</p>
+    <p><b>EPG</b>：检测旁路由本机生成的 <span class="mono">/www/epg.xml.gz</span> 能不能访问。</p>
+
+    <h3>播放异常分析怎么看</h3>
+    <p>它会临时抓 8 秒 DHCP、IGMP 和 ARP。看到 DHCP 说明盒子在请求或续租 IPTV 地址；看到 IGMP 说明盒子正在请求频道组播；只看到 ARP 或完全没有包时，通常要检查盒子是否真的在播放直播频道。</p>
+    <p>如果盒子本身都不能正常播放，先修复盒子直通链路；如果盒子能播但播放器不能播，再看节目单地址、Lucky 反代、播放器是否支持当前 URL 格式。</p>
+
+    <h3>重要提醒</h3>
+    <p>被动抓包不能凭空扫描全部频道，只能发现抓包期间盒子实际播放/切换过并产生流量的频道。缺几十个频道时，通常需要在盒子上逐个切到那些频道，或者从运营商/旧设备导出的节目单里合并。</p>
+    <p>组播数据不应该走 Nikki/OpenClash 代理。页面里的“确认组播不走代理”和“一键自检”就是为了确认 IPTV 路由仍在专用接口上。</p>
+  </div>
+
+  <section class="pane" data-tab="playlist">
+  <h2 id="playlistSection">节目表在线编辑</h2>
+  <div class="card">
+    <div class="form">
+      <div class="field"><label>选择文件</label><select id="playlistFile" onchange="loadHistory()"><option value="new.m3u">基础节目单 new.m3u</option><option value="new-logo.m3u">带台标节目单 new-logo.m3u</option><option value="vsp.m3u">VSP 候选 vsp.m3u</option></select></div>
+      <div class="field"><label>历史保留数量</label><select id="historyCount" onchange="setHistoryCount()"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+      <div class="field"><label>历史版本</label><select id="historyList"></select></div>
+    </div>
+    <div class="small">可直接调整频道顺序。每次保存会自动记录历史版本并备注修改日期，修改失败可选择历史版本一键恢复。M3U 频道一般由一行 <span class="mono">#EXTINF</span> 加下一行播放地址组成，移动频道时这两行要一起移动。</div>
+    <div id="playlistCount" class="small">当前节目数量：未读取</div>
+    <textarea id="playlistEditor" class="editor" spellcheck="false" oninput="updatePlaylistCount()"></textarea>
+    <div class="btns">
+      <button class="btn" title="读取当前选择的节目表文件" onclick="loadPlaylist()">读取节目表</button>
+      <button class="btn secondary" title="保存节目表并自动写入历史记录" onclick="savePlaylist()">保存节目表</button>
+      <button class="btn secondary" title="从所选历史版本恢复节目表" onclick="restoreHistory()">恢复所选历史</button>
+      <button class="btn secondary" title="刷新历史版本列表" onclick="loadHistory()">刷新历史</button>
+      <button class="btn secondary" title="4K/超高清优先；CCTV 内部按 1 到 N 排列，同序号高清源作为线路 1；然后省级卫视、地方卫视、VSP 其他、原节目单剩余、国外频道" onclick="actConfirm('merge_vsp_playlist','确认按规则直接合并 VSP 候选节目单？会先备份 new.m3u 和 new-logo.m3u。')">按规则合并</button>
+      <button class="btn secondary" title="读取基础节目单 new.m3u，匹配本地台标库后保存到带台标节目单 new-logo.m3u（不改动基础节目单 new.m3u）" onclick="logoBuild('decorate_logos','在基础节目单 new.m3u 基础上匹配台标，生成/覆盖到带台标节目单 new-logo.m3u。基础节目单不变。')">一键增加台标</button>
+      <button class="btn secondary" title="从带台标节目单 new-logo.m3u 去除 tvg-logo，保存到基础节目单 new.m3u（不改动 new-logo.m3u）" onclick="logoBuild('remove_all_logos','从带台标节目单 new-logo.m3u 去掉所有台标，保存到基础节目单 new.m3u。带台标节目单不变。')">一键去除台标</button>
+    </div>
+  </div>
+
+  <h2 id="invalidSection">可选删除失效源</h2>
+  <div class="card">
+    <div class="small">先后台验证基础节目单里的播放地址，显示检测进度；完成后只列出“初步认定失效”的节目源。删除前需要人工勾选并再次确认。</div>
+    <div class="btns">
+      <button class="btn secondary" title="后台检测基础节目单中播放地址的可访问性" onclick="validateChannels()">验证失效源</button>
+      <button class="btn secondary" title="停止当前失效源验证任务" onclick="stopValidateChannels()">停止验证</button>
+      <button class="btn danger" title="删除已勾选的疑似失效节目源" onclick="deleteSelectedInvalid()">删除勾选项</button>
+    </div>
+    <div id="invalidProgress" class="log">尚未检测。</div>
+    <div id="invalidList" class="small"></div>
+  </div>
+
+  <h2 id="logoMgr">台标库管理（本地）</h2>
+  <div class="card">
+    <div class="small">台标已下载缓存到旁路由本地 <span class="mono">/www/iptv/logos/</span>，Emby 等本地软件从路由器本机读取，<b>不依赖 NAS 在线</b>，重启不丢。可逐个查看、上传替换或删除；替换后的台标会被「一键增加台标」保留。</div>
+    <div class="small">上传建议：优先 PNG，透明背景最好；CCTV 这类横版台标可用 600×270，通用方形台标可用 512×512 或 256×256。jpg / webp / gif 会在后端尽量自动转换为 PNG，无法转换时会提示失败，避免 Emby 出现破图。</div>
+    <div class="btns">
+      <button class="btn" title="可选功能：仅在 /etc/soso-iptv-epg-host 配置了外部工具箱主机后，强制重新拉取当前节目单台标到旁路由本地库" onclick="syncToolboxLogos()">同步外部工具箱台标</button>
+      <button class="btn" title="为本地库还缺台标的频道，从可选 {name} 图片模板下载补全；如果没有模板，请使用 EPG台标汇总或一站式更新从 EPG icon src 提取" onclick="fetchOnlineLogos()">模板台标补全</button>
+      <button class="btn" title="解析在线 XMLTV/EPG 源里的 channel icon，把匹配当前节目单的图标下载到本地库，并重建 new-logo.m3u" onclick="fetchEpgIcons()">EPG台标汇总</button>
+      <button class="btn secondary" title="读取带台标节目单，显示每个频道当前台标，可上传替换" onclick="loadLogoManager()">加载/刷新台标库</button>
+      <span class="small" id="logoMgrCount" style="align-self:center"></span>
+    </div>
+    <div id="logoGrid" class="logo-grid"></div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="epg">
+  <h2 id="epgSection">本地 EPG 管理</h2>
+  <div class="epg-board">
+  <div class="card epg-config-card">
+    <div class="small">这里把在线 EPG、EPG 内置图标、可选台标模板、频道别名和定时更新集中管理。更新后会在旁路由本地生成 <span class="mono">/www/epg.xml.gz</span> 与兼容地址 <span class="mono">/www/t.xml.gz</span>，并从 XMLTV 的 <span class="mono">icon src</span> 提取台标；外部工具箱/NAS 不再是必需组件。</div>
+    <div class="epg-text-grid">
+      <div class="field">
+        <label>在线 EPG / 图标提取源</label>
+        <textarea id="epgSourcesEditor" spellcheck="false"></textarea>
+        <div class="small epg-note">每行一个 XMLTV 地址；系统会从 EPG 的 <span class="mono">icon src</span> 提取台标。</div>
+      </div>
+      <div class="field">
+        <label>可选在线台标图片模板</label>
+        <textarea id="logoSourcesEditor" spellcheck="false"></textarea>
+        <div class="small epg-note">可留空；模板才需要 <span class="mono">{name}</span>。只有 EPG/XMLTV 源时放左边即可。</div>
+      </div>
+      <div class="field">
+        <label>频道别名 / 归一化规则</label>
+        <textarea id="channelAliasesEditor" spellcheck="false"></textarea>
+        <div class="small epg-note">你提供的 CCTV 正则会保存到这里；路由器实际匹配时使用内置兼容规则，避免 busybox 不支持 PCRE 负向判断。</div>
+      </div>
+    </div>
+    <div class="epg-schedule-grid">
+      <div class="field"><label>启用定时</label><select id="epgScheduleEnabled"><option value="1">启用</option><option value="0">停用</option></select></div>
+      <div class="field"><label>保存天数</label><select id="epgKeepDays"><option>3</option><option>7</option><option selected>14</option><option>30</option></select></div>
+      <div class="field"><label>开始时间</label><input id="epgStart" type="time" value="00:00"></div>
+      <div class="field"><label>结束时间</label><input id="epgEnd" type="time" value="23:59"></div>
+      <div class="field"><label>间隔小时</label><select id="epgIntervalHours"><option>1</option><option>2</option><option>3</option><option selected>6</option><option>12</option><option>24</option></select></div>
+      <div class="field"><label>间隔分钟</label><select id="epgIntervalMinutes"><option selected>0</option><option>15</option><option>30</option><option>45</option></select></div>
+    </div>
+    <div class="btns epg-actions">
+      <button class="btn" title="保存 EPG 源、台标源、别名和定时任务配置" onclick="saveEpgConfig()">保存配置</button>
+      <button class="btn secondary" title="从在线 EPG 源拉取节目数据，过滤当前节目单频道并生成本地 epg.xml.gz" onclick="updateLocalEpg()">更新本地 EPG</button>
+      <button class="btn secondary" title="更新本地 EPG、从 EPG icon src 汇总台标、可选模板补全台标、为剩余缺失频道生成文字台标" onclick="runEpgPipeline()">一站式更新</button>
+      <button class="btn secondary" title="只为缺失台标的频道生成本地文字兜底台标" onclick="generateFallbackLogos()">生成兜底台标</button>
+      <button class="btn secondary" title="重新读取当前路由器上的 EPG 管理配置" onclick="loadEpgConfig()">刷新配置</button>
+    </div>
+  </div>
+  <div class="card epg-log-card">
+    <b>更新数据日志</b>
+    <div class="small">EPG、台标、兜底 PNG 生成的结果会显示在这里；手机点按钮后，电脑刷新本页也能看到系统日志里的结果。</div>
+    <div id="epgConfigStatus" class="log">尚未读取配置。</div>
+  </div>
+  </div>
+  </section>
+  <section class="pane" data-tab="network">
+  <h2 id="networkSection">抓包配套：网络模式与网口</h2>
+  <div class="card">
+    <div class="small">这一组主要服务于抓包。先确认光猫 IPTV 口和 USB 盒子口，再按需要切换直通/抓包模式或 udpxy 单播模式。涉及网口和模式切换时，当前播放可能短暂中断。</div>
+    <div class="form">
+      <div class="field"><label>IPTV 数据入口网口</label><input id="iptvIf" value="eth1"></div>
+      <div class="field"><label>盒子 / USB 抓包网口</label><input id="boxIf" value="eth2"></div>
+      <div class="field"><label>推荐接线</label><input value="eth1 接光猫 IPTV 口；eth2/USB 网口接 IPTV 盒子" disabled></div>
+    </div>
+    <div class="btns">
+      <button class="btn secondary" title="保存 IPTV 入口和盒子扫描口配置，不会立即重启网络" onclick="quickPortSetup()">保存网口设置</button>
+      <button class="btn secondary" title="自动识别并修复已连接的 USB 网卡，拉起网口、加入 br-iptv，并重建抓包透传规则" onclick="debugUsbCapture()">调试并修复 USB 抓包口</button>
+      <button class="btn secondary" title="把填写的 IPTV 数据入口网口设为光猫 IPTV 组播输入端，并与盒子 USB 口组成 br-iptv" onclick="setIptvInputIface()">设为 IPTV 组播入口</button>
+      <button class="btn redbtn" title="盒子直连 IPTV 网络，适合正常盒子观看和抓包" onclick="switchMode('passthrough')">直通/抓包模式</button>
+      <button class="btn okbtn" title="启用 udpxy，适合播放器 HTTP 单播访问" onclick="switchMode('udpxy')">udpxy 单播模式</button>
+      <button class="btn secondary" title="用基础节目单第一个 HTTP 地址做简单下载测速" onclick="act('speed_test')">模式测速</button>
+      <button class="btn secondary" title="确认 239.x 组播路由没有走 Nikki/OpenClash" onclick="act('check_no_proxy')">确认组播不走代理</button>
+      <button class="btn" title="组播被 Nikki/OpenClash 透明代理拦截时一键修复：高优先级 ip rule + 专用路由强制 239/224 直连 br-iptv（结果见高级与日志）" onclick="act('fix_multicast_proxy')">修复被透明代理</button>
+      <button class="btn" title="新装/重置后一键配置：网口+br-iptv桥+二层透传+路由修复+启用udpxy单播+出流自检，一步到播放器可直接播放（结果见高级与日志）" onclick="act('setup_playable')">🚀 新装一键配置(到可播放)</button>
+      <button class="btn" title="一键修复：拉起 IPTV/盒子网口、重建 br-iptv 与二层透传、确保 IPTV 口不抢默认路由、恢复 LAN 默认路由、保留 239 组播专用路由（结果见高级与日志）" onclick="act('repair_network')">一键网口/路由修复</button>
+      <button class="btn" title="IPTV 口 DHCP 地址变化后，一键把 udpxy 来源更新为当前 IPTV 地址并重启 udpxy（结果见高级与日志）" onclick="act('refresh_udpxy')">更新IPTV地址(udpxy)</button>
+    </div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="capture">
+  <h2 id="captureSection">抓包与频道发现</h2>
+  <div class="capture-layout">
+    <div class="card">
+      <div class="row">
+        <div>
+          <b>抓开机包 / VSP 完整频道表</b>
+          <div class="small">用于抓 IPTV 盒子从断电开机到进入首页/直播页期间的配置、认证、频道接口和 VSP 会话。目标是获取完整频道名称、频道 ID、组播地址和台标候选。</div>
+          <div class="btns">
+            <button class="btn redbtn" title="盒子直连 IPTV 网络，抓开机包前先切到此模式" onclick="switchMode('passthrough')">直通/抓包模式</button>
+            <button class="btn okbtn" title="启用 udpxy，适合播放器 HTTP 单播访问" onclick="switchMode('udpxy')">udpxy 单播模式</button>
+            <button class="btn" title="启动开机配置抓包，请随后打开 IPTV 盒子；完成启动和进入直播页后手动停止" onclick="actCapture('capture_boot_config')">开始抓开机包</button>
+            <button class="btn secondary" title="停止开机配置抓包并显示保存位置" onclick="actCapture('stop_boot_config')">停止开机包</button>
+            <button class="btn secondary" title="从抓包文件中提取明文组播地址、接口和配置候选" onclick="actCapture('analyze_boot_config')">分析开机包</button>
+            <button class="btn secondary" title="从开机数据里的 VSP 会话获取频道名称和组播地址；右侧会实时显示频道总数、当前进度和成功/失败数量" onclick="actCapture('fetch_vsp_playlist')">VSP获取并单独保存</button>
+            <a class="btn secondary" title="下载开机配置抓包 pcap 文件" href="/cgi-bin/iptv-action?action=download_boot_capture" target="_blank">下载开机包</a>
+          </div>
+        </div>
+        <div>
+          <b>切台手动抓频道</b>
+          <div class="small">用于补缺失频道。开始后在 IPTV 盒子上逐个切到缺失频道，每个频道停留 3-5 秒；停止后自动分析本次出现过的组播地址并补入节目单。</div>
+          <div class="btns">
+            <button class="btn" title="开始监听 USB 盒子侧组播流量，适合盒子切台补频道" onclick="actCapture('start_capture')">开始切台抓频道</button>
+            <button class="btn secondary" title="停止抓包，分析新增频道并并入基础节目单" onclick="actCapture('stop_capture')">停止并补入节目单</button>
+          </div>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="btn secondary" title="查看 /tmp/iptv 目录下各文件用途说明" onclick="actCapture('runtime_readme')">查看数据说明</button>
+        <button class="btn danger" title="只删除 /tmp/iptv/trash 下抓包、分析、候选列表等临时数据，不删除正式节目单" onclick="actCaptureConfirm('clean_runtime','确认清理 /tmp/iptv/trash 下的抓包和分析临时数据？正式节目单不会删除。')">清理抓包临时数据</button>
+      </div>
+      <div class="small">运行时根目录为 <span class="mono">/tmp/iptv/</span>，说明文件为 <span class="mono">/tmp/iptv/README.md</span>。VSP 获取会单独保存到 <span class="mono">/www/vsp.m3u</span> 和 <span class="mono">/www/vsp.tsv</span>，不会立即修改正式节目单。切台手动抓频道只能发现盒子实际播放或切到过的频道。</div>
+    </div>
+    <div class="card">
+      <b>抓包状态</b>
+      <div class="small">这里同步显示开机包、VSP 获取、切台抓频道和清理操作的最近输出。</div>
+      <div id="captureStatus" class="log capture-log">等待开机抓包操作...</div>
+    </div>
+  </div>
+
+  <h2>组播盲扫</h2>
+  <div class="card">
+    <div class="small">盲扫只建议在抓不到包、找不到 EPG 文件时小范围使用。它会按固定段生成候选组播地址，可能产生较多探测流量，过大范围可能被运营商侧限制。</div>
+    <div class="form">
+      <div class="field"><label>组播段前三段</label><input id="scanBase" value="239.254.10"></div>
+      <div class="field"><label>起始尾号</label><input id="scanStart" value="1"></div>
+      <div class="field"><label>结束尾号</label><input id="scanEnd" value="255"></div>
+      <div class="field"><label>端口</label><input id="scanPort" value="5000"></div>
+    </div>
+    <div class="btns">
+      <button class="btn danger" title="生成一段组播候选地址，风险较高，请小范围使用" onclick="blindScan()">自动化组播盲扫</button>
+    </div>
+  </div>
+
+  <h2>抓包补频道流程</h2>
+  <div class="card">
+    <div class="small">
+      <p><b>1. 接线确认</b>：光猫 IPTV 口接旁路由 IPTV 入口，运营商 IPTV 盒子接旁路由 USB 网口。当前盒子侧 USB 抓包口显示为 <span class="mono">eth2</span> 且状态为 UP 时再开始。</p>
+      <p><b>2. 开始抓包</b>：点击“开始抓原始组播”。此时旁路由会从盒子侧网口抓取 IPTV 盒子的 IGMP 请求和 UDP 组播流量，并尝试从明文 HTTP/API 流量里识别频道名和台标 URL。</p>
+      <p><b>3. 盒子切台</b>：在运营商 IPTV 盒子上连续切换你缺失的频道，每个频道停留 3-5 秒，让组播流真正出现。</p>
+      <p><b>4. 停止分析</b>：点击“停止分析并自动补频道”。系统会把本次抓到的 <span class="mono">239.x.x.x:端口</span> 和现有节目单比对。</p>
+      <p><b>5. 自动写入</b>：新地址会写入 <span class="mono">new.m3u</span> 和 <span class="mono">new.txt</span>，并自动重新生成 <span class="mono">new-logo.m3u</span>。已存在的地址不会重复添加；如果识别到台标或频道名，会更新现有条目的标注；没有抓到台标时会尝试从旁路由本地库、在线 EPG 图标和可选图片模板匹配。</p>
+      <p><b>6. 使用节目单</b>：播放器优先使用 <span class="mono">http://路由器IP:8080/new-logo.m3u</span>。外部访问入口已移除，请仅在内网使用。</p>
+      <p><b>注意</b>：这个功能不是全网扫描。只有盒子实际播放/切到过、并在抓包期间产生流量的频道，才能被发现并补进节目单。台标和频道名只能从明文资源中识别，HTTPS 加密或私有二进制协议无法直接解析。</p>
+    </div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="playlist">
+  <h2>添加频道</h2>
+  <div class="card">
+    <div class="form">
+      <div class="field"><label>频道名称</label><input id="chName" placeholder="例如 CCTV1"></div>
+      <div class="field"><label>组播地址:端口</label><input id="chAddr" placeholder="239.21.1.120:5002"></div>
+      <div class="field"><label>协议</label><select id="chProto"><option value="rtp">rtp</option><option value="udp">udp</option></select></div>
+      <div class="field"><label>台标 URL（可选）</label><input id="chLogo" placeholder="留空则按模板生成"></div>
+      <div class="field"><label>台标模板</label><input id="logoTpl" value="https://live.fanmingming.com/tv/{name}.png"></div>
+      <div class="field"><label>保存到</label><select id="chFile"><option value="new">推荐节目单 new</option><option value="tv">标准节目单 tv</option></select></div>
+    </div>
+    <div class="btns"><button class="btn" onclick="saveChannel()">保存频道并写入 m3u/txt</button></div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="advanced">
+  <h2 id="advancedSection">高级设置</h2>
+  <div class="card">
+    <b>后台 YAML 配置</b>
+    <div class="small">用于自定义页面标题、作者、说明和访问地址。备注规则：<span class="mono">#</span> 开头是备注；链接规则：<span class="mono">- title: 名称 | url: 地址 | note: 备注</span>。</div>
+    <textarea id="configEditor" class="editor" spellcheck="false"></textarea>
+    <div class="btns">
+      <button class="btn" onclick="loadConfig()">读取 YAML 配置</button>
+      <button class="btn secondary" onclick="saveConfig()">保存 YAML 配置</button>
+      <button class="btn secondary" onclick="applyConfigFromEditor()">预览配置</button>
+    </div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="network">
+  <h2>IPTV 接口 / 机顶盒伪装</h2>
+  <div class="card">
+    <div class="small">
+      <p><b>位置</b>：这是高级设置，作用在旁路由的 IPTV 专用入口上，通常对应接光猫 IPTV 口的网口，不是家庭 LAN，也不是普通上网 WAN。</p>
+      <p><b>功能</b>：当运营商 IPTV 网络需要识别机顶盒身份时，用这里配置 MAC 克隆、DHCP Hostname、Option 60、Option 61 或 PPPoE 账号密码，让旁路由在 IPTV 侧表现得更像原机顶盒。</p>
+      <p><b>使用场景</b>：只有在盒子直通能播放、但旁路由自己拿不到 IPTV 地址，或运营商限制必须机顶盒认证时才需要改。普通抓包、VSP 获取、切台补频道不需要频繁动这里。</p>
+      <p><b>风险</b>：改错可能导致 IPTV 侧拿不到地址或盒子无法播放。修改前建议先确认当前接线和网口名称，避免把家庭 LAN/WAN 配错。</p>
+    </div>
+    <div class="form">
+      <div class="field"><label>IPTV 接口</label><input id="iface" value="eth1"></div>
+      <div class="field"><label>协议</label><select id="proto"><option value="dhcp">DHCP</option><option value="none">无 IP</option><option value="pppoe">PPPoE</option></select></div>
+      <div class="field"><label>MAC 克隆</label><input id="mac" placeholder="例如 78:71:04:db:98:2b"></div>
+      <div class="field"><label>DHCP Hostname</label><input id="hostname" placeholder="例如 STB / IPTV"></div>
+      <div class="field"><label>DHCP Option 60</label><input id="vendorid" placeholder="运营商需要时填写"></div>
+      <div class="field"><label>DHCP Option 61</label><input id="clientid" placeholder="运营商需要时填写"></div>
+      <div class="field"><label>PPPoE 用户名</label><input id="pppoeUser" autocomplete="off"></div>
+      <div class="field"><label>PPPoE 密码</label><input id="pppoePass" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="btns"><button class="btn danger" onclick="applyIptv()">保存 IPTV 接口设置</button></div>
+    <div class="small">保存后只修改 IPTV 专用接口配置，不主动修改家庭 LAN。PPPoE 仅用于运营商 IPTV 需要单独拨号登录的环境。</div>
+  </div>
+
+  </section>
+  <section class="pane" data-tab="advanced">
+  <h2>诊断结果</h2>
+  <div id="diag" class="card"><span class="muted">等待检测...</span></div>
+  <h2>抓包日志</h2>
+  <div class="btns">
+    <button class="btn secondary" title="读取开机包、VSP、切台抓包共享日志" onclick="loadCaptureSharedLog()">查看抓包日志</button>
+    <button class="btn secondary" title="下载抓包日志为 txt 文件" onclick="downloadCaptureSharedLog()">下载抓包日志</button>
+    <button class="btn danger" title="只清空抓包日志，不删除 pcap、节目单和历史版本" onclick="clearCaptureSharedLog()">清空抓包日志</button>
+  </div>
+  <div id="captureLog" class="log">等待抓包操作...</div>
+  <h2>系统日志</h2>
+  <div class="btns">
+    <button class="btn" title="LuCI 菜单打开报 500/error500 时使用：清理 LuCI 缓存并重启 ubus/rpcd、重载 uhttpd" onclick="act('repair_luci_menu')">修复 LuCI 菜单/服务</button>
+    <button class="btn secondary" title="从路由器读取系统共享日志，手机和电脑看到的是同一份" onclick="loadSharedLog()">查看系统日志</button>
+    <button class="btn secondary" title="下载系统日志为 txt 文件" onclick="downloadSharedLog()">下载系统日志</button>
+    <button class="btn danger" title="只清空系统日志，不删除抓包、节目单和历史版本" onclick="clearSharedLog()">清空系统日志</button>
+  </div>
+  <div id="log" class="log">等待系统操作...</div>
+  </section>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function previewAlpha(){const v=$('panelAlpha').value;$('alphaValue').textContent=v+'%';document.documentElement.style.setProperty('--panelAlpha',v+'%')}
+function mixHex(a,b,p){const ah=a.replace('#',''),bh=b.replace('#','');const ar=parseInt(ah.slice(0,2),16),ag=parseInt(ah.slice(2,4),16),ab=parseInt(ah.slice(4,6),16);const br=parseInt(bh.slice(0,2),16),bg=parseInt(bh.slice(2,4),16),bb=parseInt(bh.slice(4,6),16);const m=(x,y)=>Math.round(x*(1-p)+y*p).toString(16).padStart(2,'0');return '#'+m(ar,br)+m(ag,bg)+m(ab,bb)}
+function applyTheme(t){const alpha=String(t.panelAlpha||92);const bg=t.bg||'#101821';const panel=mixHex(bg,'#ffffff',.08);const panel2=mixHex(bg,'#ffffff',.14);const line=mixHex(bg,'#ffffff',.24);document.documentElement.style.setProperty('--accent',t.accent||'#2f80ed');document.documentElement.style.setProperty('--bg',bg);document.documentElement.style.setProperty('--panel',panel);document.documentElement.style.setProperty('--panel2',panel2);document.documentElement.style.setProperty('--line',line);document.documentElement.style.setProperty('--image',t.bgImage?`url("${t.bgImage}")`:'none');document.documentElement.style.setProperty('--logo',t.logoImage?`url("${t.logoImage}")`:'none');document.documentElement.style.setProperty('--panelAlpha',alpha+'%');document.body.classList.toggle('has-logo',!!t.logoImage);$('accent').value=t.accent||'#2f80ed';$('bg').value=bg;$('bgImage').value=t.bgImage||'';$('logoImage').value=t.logoImage||'';$('panelAlpha').value=alpha;$('alphaValue').textContent=alpha+'%';}
+function authParams(){return '&auth_user='+encodeURIComponent(sessionStorage.iptvUser||'')+'&auth_pass='+encodeURIComponent(sessionStorage.iptvPass||'')}
+async function login(){const user=$('loginUser').value,pass=$('loginPass').value;const p=new URLSearchParams({action:'auth',user,pass});const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const t=(await r.text()).trim();if(t==='OK'){sessionStorage.iptvAuthed='1';sessionStorage.iptvUser=user;sessionStorage.iptvPass=pass;$('loginLayer').style.display='none';loadStatus()}else alert('账号或密码错误')}
+function requireLogin(){if(sessionStorage.iptvAuthed==='1')$('loginLayer').style.display='none'}
+function toggleTheme(show){if(!show)resetArmed=false;$('themeModal').classList.toggle('show',show)}
+function toggleAccount(show){if(show){$('oldUser').value=sessionStorage.iptvUser||'';$('oldPass').value=sessionStorage.iptvPass||'';$('newUser').value=sessionStorage.iptvUser||'';$('newPass').value='';$('newPass2').value=''}$('accountModal').classList.toggle('show',show)}
+async function saveAccount(){const olduser=$('oldUser').value.trim(),oldpass=$('oldPass').value,user=$('newUser').value.trim(),pass=$('newPass').value,pass2=$('newPass2').value;if(!olduser||!oldpass||!user||!pass){alert('账号和密码不能为空');return}if(user.includes(':')||pass.includes(':')){alert('账号和密码不能包含冒号 :');return}if(pass!==pass2){alert('两次新密码不一致');return}const p=new URLSearchParams({olduser,oldpass,user,pass});$('log').textContent='保存账号中...';const r=await fetch('/cgi-bin/iptv-action?action=change_auth',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:p.toString()});const txt=await r.text();$('log').textContent=txt;if(txt.includes('已更新')){sessionStorage.iptvUser=user;sessionStorage.iptvPass=pass;sessionStorage.iptvAuthed='1';$('loginUser').value=user;$('loginPass').value=pass;toggleAccount(false);alert('账号密码已保存')}} 
+function applyPreset(a,b){$('accent').value=a;$('bg').value=b;applyTheme({accent:a,bg:b,bgImage:$('bgImage').value.trim(),logoImage:$('logoImage').value.trim(),panelAlpha:$('panelAlpha').value})}
+async function loadTheme(){try{const r=await fetch('/cgi-bin/iptv-action?action=get_theme',{method:'POST'});const t=await r.json();localStorage.iptvTheme=JSON.stringify(t);applyTheme(t)}catch(e){try{applyTheme(JSON.parse(localStorage.iptvTheme||'{}'))}catch(_){applyTheme({})}}}
+async function uploadThemeAsset(inputId,asset){const file=$(inputId).files&&$(inputId).files[0];if(!file)return '';const m=file.type.match(/^image\/(png|jpeg|jpg|webp|gif)$/);if(!m){throw new Error('只支持 png、jpg、webp、gif 图片：'+file.name)}const ext=m[1]==='jpeg'?'jpg':m[1];const r=await fetch('/cgi-bin/iptv-action?action=save_theme_asset&asset='+encodeURIComponent(asset)+'&ext='+encodeURIComponent(ext)+authParams(),{method:'POST',body:file});const txt=(await r.text()).trim();if(!txt.startsWith('/iptv/assets/'))throw new Error(txt||'图片上传失败');return txt}
+async function saveTheme(){try{$('log').textContent='保存主题中...';const bgLocal=await uploadThemeAsset('bgFile','bg');const logoLocal=await uploadThemeAsset('logoFile','logo');if(bgLocal)$('bgImage').value=bgLocal;if(logoLocal)$('logoImage').value=logoLocal;const t={accent:$('accent').value,bg:$('bg').value,bgImage:$('bgImage').value.trim(),logoImage:$('logoImage').value.trim(),panelAlpha:$('panelAlpha').value};localStorage.iptvTheme=JSON.stringify(t);applyTheme(t);const r=await fetch('/cgi-bin/iptv-action?action=save_theme'+authParams(),{method:'POST',body:JSON.stringify(t)});$('log').textContent=await r.text();toggleTheme(false)}catch(e){$('log').textContent='主题保存失败：'+e.message}}
+let resetArmed=false;function resetThemeGuard(){if(!resetArmed){resetArmed=true;$('log').textContent='防呆确认：再次点击“恢复默认”才会清空主题；点击取消可中止。';return}resetArmed=false;delete localStorage.iptvTheme;applyTheme({});fetch('/cgi-bin/iptv-action?action=save_theme'+authParams(),{method:'POST',body:'{}'});$('log').textContent='主题已恢复默认。'}
+function parseYamlConfig(text){const cfg={links:[]};for(const raw of String(text||'').split(/\n/)){const line=raw.trim();if(!line||line.startsWith('#'))continue;if(line.startsWith('- ')){const item={};for(const part of line.slice(2).split('|')){const m=part.trim().match(/^([^:]+):\s*(.*)$/);if(m)item[m[1].trim()]=m[2].trim()}if(item.title||item.url)cfg.links.push(item);continue}const m=line.match(/^([^:]+):\s*(.*)$/);if(m){const key=m[1].trim();if(key!=='links')cfg[key]=m[2].trim()}}return cfg}
+function renderConfig(cfg){$('pageTitle').textContent=cfg.title||'IPTV 家庭网关';$('pageAuthor').textContent=cfg.author||'SOSO';$('pageSubtitle').textContent=cfg.subtitle||'';if(cfg.logoImage){document.documentElement.style.setProperty('--logo',`url("${cfg.logoImage}")`);document.body.classList.add('has-logo')}const links=cfg.links&&cfg.links.length?cfg.links:[];$('linkGrid').innerHTML=links.map((l,i)=>`<div class="card"><b>${esc(l.title||'入口')}</b><div class="link-card"><div class="link-main"><a href="${esc(l.url||'#')}" target="_blank">${esc(l.url||'')}</a><span class="small">${esc(l.note||'')}</span></div><button class="copy" data-copy-index="${i}">复制</button></div></div>`).join('');window.iptvLinks=links;document.querySelectorAll('[data-copy-index]').forEach(btn=>btn.onclick=()=>copyText(btn.dataset.copyIndex))}
+async function copyText(i){const url=(window.iptvLinks&&window.iptvLinks[i]&&window.iptvLinks[i].url)||'';try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(url)}else{const ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');ta.remove()}$('log').textContent='已复制：'+url}catch(e){$('log').textContent='复制失败，请手动复制：'+url}}
+async function loadConfig(){const r=await fetch('/cgi-bin/iptv-action?action=get_config',{method:'POST'});const txt=await r.text();$('configEditor').value=txt;renderConfig(parseYamlConfig(txt))}
+function applyConfigFromEditor(){renderConfig(parseYamlConfig($('configEditor').value));$('log').textContent='已预览 YAML 配置，确认后可保存。'}
+async function saveConfig(){const r=await fetch('/cgi-bin/iptv-action?action=save_config'+authParams(),{method:'POST',body:$('configEditor').value});$('log').textContent=await r.text();await loadConfig()}
+function countPlaylistChannels(text){return (String(text||'').match(/^#EXTINF\b/gm)||[]).length}
+function updatePlaylistCount(){const file=$('playlistFile').value||'节目表';const count=countPlaylistChannels($('playlistEditor').value);$('playlistCount').textContent='当前编辑：'+file+'；节目数量：'+count}
+async function loadPlaylist(){const file=$('playlistFile').value;const r=await fetch('/cgi-bin/iptv-action?action=get_playlist&file='+encodeURIComponent(file),{method:'POST'});$('playlistEditor').value=await r.text();updatePlaylistCount();loadHistory()}
+async function savePlaylist(){const file=$('playlistFile').value;if(!confirm('确认保存 '+file+'？保存前会在路由器上生成历史备份。'))return;const r=await fetch('/cgi-bin/iptv-action?action=save_playlist&file='+encodeURIComponent(file)+authParams(),{method:'POST',body:$('playlistEditor').value});$('log').textContent=await r.text();updatePlaylistCount();setTimeout(loadStatus,800);loadHistory()}
+function parseSectionConfig(txt){const out={},lines=String(txt||'').split(/\n/);let sec='';for(const line of lines){const m=line.match(/^\[([^\]]+)\]\s*$/);if(m){sec=m[1];out[sec]='';continue}if(sec)out[sec]+=(out[sec]?'\n':'')+line}return out}
+function parseKvBlock(txt){const o={};String(txt||'').split(/\n/).forEach(l=>{const i=l.indexOf('=');if(i>0)o[l.slice(0,i).trim()]=l.slice(i+1).trim()});return o}
+function setEpgLog(txt){if($('epgConfigStatus'))$('epgConfigStatus').textContent=txt;if($('log'))$('log').textContent=txt}
+async function loadEpgConfig(){try{const r=await fetch('/cgi-bin/iptv-action?action=get_epg_config'+authParams(),{method:'POST'});const txt=await r.text();const cfg=parseSectionConfig(txt),sch=parseKvBlock(cfg.schedule||'');$('epgSourcesEditor').value=(cfg.epg_sources||'').trim();$('logoSourcesEditor').value=(cfg.logo_sources||'').trim();$('channelAliasesEditor').value=(cfg.channel_aliases||'').trim();$('epgScheduleEnabled').value=sch.enabled||'1';$('epgKeepDays').value=sch.keep_days||'14';$('epgStart').value=sch.start||'00:00';$('epgEnd').value=sch.end||'23:59';$('epgIntervalHours').value=sch.interval_hours||'6';$('epgIntervalMinutes').value=sch.interval_minutes||'0';$('epgConfigStatus').textContent=(cfg.status||'').trim()||'已读取配置。'}catch(e){$('epgConfigStatus').textContent='读取 EPG 配置失败：'+e.message}}
+function epgScheduleBody(){return ['enabled='+$('epgScheduleEnabled').value,'keep_days='+$('epgKeepDays').value,'start='+$('epgStart').value,'end='+$('epgEnd').value,'interval_hours='+$('epgIntervalHours').value,'interval_minutes='+$('epgIntervalMinutes').value].join('\n')}
+async function saveEpgConfig(){const p=new URLSearchParams({epg_sources:$('epgSourcesEditor').value,logo_sources:$('logoSourcesEditor').value,channel_aliases:$('channelAliasesEditor').value,schedule:epgScheduleBody()});setEpgLog('保存中...');const r=await fetch('/cgi-bin/iptv-action?action=save_epg_config'+authParams(),{method:'POST',body:p.toString(),headers:{'Content-Type':'application/x-www-form-urlencoded'}});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt)}
+async function updateLocalEpg(){if(!confirm('确认从在线 EPG 源生成本地 EPG？会过滤为当前节目单相关频道，不会修改节目单。'))return;setEpgLog('正在更新本地 EPG，在线源较慢时可能需要几分钟...');const r=await fetch('/cgi-bin/iptv-action?action=update_local_epg'+authParams(),{method:'POST'});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt);setTimeout(loadStatus,800)}
+let epgPipelineTimer=null;
+async function pollEpgPipeline(){
+  try{
+    const r=await fetch('/cgi-bin/iptv-action?action=epg_pipeline_status'+authParams(),{method:'POST'});
+    const txt=await r.text();
+    setEpgLog(txt);
+    if(!txt.startsWith('RUNNING')){
+      clearInterval(epgPipelineTimer);epgPipelineTimer=null;
+      pushSharedLog(txt);
+      setTimeout(()=>{loadStatus();loadLogoManager().catch(()=>{})},800);
+    }
+  }catch(e){setEpgLog('读取一站式更新进度失败：'+esc(e.message))}
+}
+async function runEpgPipeline(){if(!confirm('确认执行一站式更新？\\n\\n会更新本地 EPG、从 EPG icon src 汇总台标、使用可选图片模板补全、为仍缺失的频道生成 PNG 兜底台标，并重建 new-logo.m3u。'))return;setEpgLog('正在启动一站式后台更新...');const r=await fetch('/cgi-bin/iptv-action?action=epg_pipeline'+authParams(),{method:'POST'});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt);if(epgPipelineTimer)clearInterval(epgPipelineTimer);epgPipelineTimer=setInterval(pollEpgPipeline,3000);setTimeout(pollEpgPipeline,800)}
+async function generateFallbackLogos(){if(!confirm('确认给仍缺失台标的频道生成本地 PNG 兜底台标？\\n\\n这会让 Emby/播放器不再显示空白图标，之后仍可手动替换成官方台标。'))return;setEpgLog('正在生成 PNG 兜底台标...');const r=await fetch('/cgi-bin/iptv-action?action=generate_fallback_logos_action'+authParams(),{method:'POST'});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt);setTimeout(loadLogoManager,500)}
+async function fetchOnlineLogos(){if(!confirm('从可选 {name} 图片模板为缺失频道下载台标？\n\n如果你只有 EPG/XMLTV 源，请用“EPG台标汇总”或“一站式更新”。此功能不会覆盖已有台标。'))return;setEpgLog('正在从可选图片模板补全台标并转换为 PNG...');$('logoMgrCount').textContent='模板补全中...';try{const r=await fetch('/cgi-bin/iptv-action?action=fetch_online_logos'+authParams(),{method:'POST'});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt)}catch(e){setEpgLog('模板补全失败：'+esc(e.message))}setTimeout(loadLogoManager,500)}
+async function fetchEpgIcons(){if(!confirm('从在线 XMLTV/EPG 源解析频道 icon，并只为当前节目单已有频道下载到本地台标库？\n\n默认源保存在 /etc/soso-iptv-epg-icon-sources，可后续自行增删。'))return;setEpgLog('正在解析在线 EPG 并汇总台标，所有可处理图标会转换为 PNG...');$('logoMgrCount').textContent='EPG 汇总中...';try{const r=await fetch('/cgi-bin/iptv-action?action=fetch_epg_icons'+authParams(),{method:'POST'});const txt=await r.text();setEpgLog(txt);pushSharedLog(txt)}catch(e){setEpgLog('EPG 台标汇总失败：'+esc(e.message))}setTimeout(loadLogoManager,500)}
+async function syncToolboxLogos(){if(!confirm('从外部工具箱强制重新同步当前节目单的台标到旁路由本地库？\n\n这是可选功能，需要先在 /etc/soso-iptv-epg-host 写入工具箱主机 IP。会覆盖本地缓存（含手动替换的），并先自动备份带台标节目单。'))return;$('log').textContent='正在从外部工具箱同步台标库...';$('logoMgrCount').textContent='同步中...';try{const r=await fetch('/cgi-bin/iptv-action?action=sync_toolbox_logos'+authParams(),{method:'POST'});$('log').textContent=await r.text()}catch(e){$('log').textContent='同步失败：'+esc(e.message)}setTimeout(loadLogoManager,500)}
+async function loadLogoManager(){const box=$('logoGrid');box.innerHTML='<span class="small">加载中...</span>';try{const r=await fetch('/cgi-bin/iptv-action?action=list_logos'+authParams(),{method:'POST'});const txt=await r.text();const items=txt.split(/\n/).filter(l=>l.trim()).map(l=>{const i=l.indexOf('\t');return i<0?{name:l.trim(),logo:''}:{name:l.slice(0,i),logo:l.slice(i+1).trim()}});$('logoMgrCount').textContent='共 '+items.length+' 个频道，'+items.filter(x=>x.logo).length+' 个有台标';window._logoItems=items;box.innerHTML=items.map((it,idx)=>{const thumb=it.logo?`<img loading="lazy" src="${esc(it.logo)}" onerror="this.style.display='none'">`:'<span class="no">无台标</span>';return `<div class="logo-item" data-idx="${idx}">${thumb}<span class="nm" title="${esc(it.name)}">${esc(it.name)}</span><div class="ops"><button class="lg-rep">替换</button>${it.logo?'<button class="lg-del">删除</button>':''}</div></div>`;}).join('');box.querySelectorAll('.logo-item').forEach(el=>{const it=items[+el.dataset.idx];const rep=el.querySelector('.lg-rep');if(rep)rep.onclick=()=>replaceLogo(it.name);const del=el.querySelector('.lg-del');if(del)del.onclick=()=>deleteLogo(it.name)})}catch(e){box.innerHTML='<span class="small">加载失败：'+esc(e.message)+'</span>'}}
+function replaceLogo(name){const inp=document.createElement('input');inp.type='file';inp.accept='image/png,image/jpeg,image/webp,image/gif';inp.onchange=async()=>{const f=inp.files&&inp.files[0];if(!f)return;let ext=(f.name.split('.').pop()||'png').toLowerCase();if(ext==='jpeg')ext='jpg';if(['png','jpg','webp','gif'].indexOf(ext)<0)ext='png';$('log').textContent='上传台标中...';const r=await fetch('/cgi-bin/iptv-action?action=upload_logo&name='+encodeURIComponent(name)+'&ext='+encodeURIComponent(ext)+authParams(),{method:'POST',body:f});$('log').textContent=await r.text();setTimeout(loadLogoManager,500)};inp.click()}
+async function deleteLogo(name){if(!confirm('删除频道「'+name+'」的台标？（仅清当前频道，可重新增加）'))return;$('log').textContent='删除中...';const r=await fetch('/cgi-bin/iptv-action?action=delete_logo&name='+encodeURIComponent(name)+authParams(),{method:'POST'});$('log').textContent=await r.text();setTimeout(loadLogoManager,400)}
+async function logoBuild(action,msg){if(!confirm(msg+'\n\n会先自动备份目标文件，可在历史版本恢复。是否继续？'))return;$('log').textContent='处理中...';const r=await fetch('/cgi-bin/iptv-action?action='+encodeURIComponent(action)+authParams(),{method:'POST'});$('log').textContent=await r.text();await loadPlaylist();setTimeout(loadStatus,800)}
+async function playlistLogoAction(action){const file=$('playlistFile').value;if(!confirm('确认对 '+file+' 执行此操作？会先备份当前文件。'))return;$('log').textContent='处理中...';const r=await fetch('/cgi-bin/iptv-action?action='+encodeURIComponent(action)+'&file='+encodeURIComponent(file)+authParams(),{method:'POST'});$('log').textContent=await r.text();await loadPlaylist();setTimeout(loadStatus,800)}
+async function loadHistory(){const file=$('playlistFile').value;const r=await fetch('/cgi-bin/iptv-action?action=get_history&file='+encodeURIComponent(file),{method:'POST'});const text=await r.text();const rows=text.trim().split(/\n/).filter(x=>x.includes('|'));$('historyList').innerHTML=rows.map(x=>{const [ts,bak,size]=x.split('|');return `<option value="${esc(bak)}">${esc(ts)} ${esc(size||'')}B</option>`}).join('')}
+async function restoreHistory(){const file=$('playlistFile').value,bak=$('historyList').value;if(!bak){alert('没有可恢复的历史版本');return}if(!confirm('确认恢复 '+bak+'？当前版本也会先备份。'))return;const r=await fetch('/cgi-bin/iptv-action?action=restore_history&file='+encodeURIComponent(file)+'&bak='+encodeURIComponent(bak)+authParams(),{method:'POST'});$('log').textContent=await r.text();await loadPlaylist()}
+async function setHistoryCount(){const r=await fetch('/cgi-bin/iptv-action?action=set_history_count&count='+encodeURIComponent($('historyCount').value)+authParams(),{method:'POST'});$('log').textContent=await r.text();loadHistory()}
+function toggleWiki(){ $('wikiPanel').classList.toggle('hidden') }
+async function runSelfCheck(){await act('self_check')}
+async function runAnalyze(){await act('analyze_playback')}
+function cssVar(name,fallback){return (getComputedStyle(document.documentElement).getPropertyValue(name)||fallback).trim()}
+function fitCanvas(c){const dpr=window.devicePixelRatio||1;const rect=c.getBoundingClientRect();const w=Math.max(280,Math.floor(rect.width||c.parentElement.clientWidth||640));const h=arguments[1]||260;c.style.height=h+'px';c.width=Math.floor(w*dpr);c.height=Math.floor(h*dpr);const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;return {ctx,w,h,panel:cssVar('--panel','#182331'),panel2:cssVar('--panel2','#202e3d'),bg:cssVar('--bg','#101821'),line:cssVar('--line','#2d3b4c'),text:cssVar('--text','#e9eef5'),muted:cssVar('--muted','#9aa8b7')}}
+function chartShell(o,title,subtitle){const ctx=o.ctx;ctx.clearRect(0,0,o.w,o.h);ctx.fillStyle=o.panel;roundRect(ctx,0,0,o.w,o.h,8,true,false);ctx.strokeStyle=o.line;ctx.lineWidth=1;roundRect(ctx,.5,.5,o.w-1,o.h-1,8,false,true);ctx.fillStyle=o.text;ctx.font='700 15px system-ui';ctx.fillText(title,16,26);ctx.fillStyle=o.muted;ctx.font='12px system-ui';ctx.fillText(subtitle,16,45)}
+function drawBarCard(ctx,x,y,w,h,it,o){ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();ctx.fillStyle=o.panel2;ctx.strokeStyle=it.ok?o.line:'#ef4444';ctx.lineWidth=it.ok?1:3;roundRect(ctx,x,y,w,h,8,true,true);ctx.fillStyle=it.color;ctx.beginPath();ctx.arc(x+20,y+22,6,0,Math.PI*2);ctx.fill();ctx.fillStyle=o.muted;ctx.font='13px system-ui';ctx.textAlign='left';ctx.fillText(it.name,x+34,y+27);ctx.fillStyle=o.text;ctx.font='700 16px system-ui';ctx.textAlign='right';ctx.fillText(it.value,x+w-16,y+28);ctx.textAlign='left';ctx.fillStyle=o.bg;roundRect(ctx,x+14,y+h-26,w-28,10,5,true,false);ctx.fillStyle=it.color;roundRect(ctx,x+14,y+h-26,Math.max(8,(w-28)*it.bar),10,5,true,false);ctx.restore()}
+function drawStatusDashboard(d){const c=$('statusChart'),o=fitCanvas(c,210),ctx=o.ctx;chartShell(o,'实时状态','来自旁路由 /cgi-bin/iptv-status，不混入播放统计');const items=[{name:'盒子 USB 口',value:d.capture_link==='UP'?'已连接':'未连接',ok:d.capture_link==='UP',bar:d.capture_link==='UP'?1:.18,color:d.capture_link==='UP'?'#22c55e':'#f59e0b'},{name:'组播绕开代理',value:d.nikki_state==='direct'?'正常':'异常',ok:d.nikki_state==='direct',bar:d.nikki_state==='direct'?1:.12,color:d.nikki_state==='direct'?'#22c55e':'#ef4444'},{name:'频道数量',value:String(d.new_count||0),ok:Number(d.new_count||0)>0,bar:Math.min(1,Number(d.new_count||0)/320),color:'#60a5fa'},{name:'EPG',value:d.epg_status==='ok'?'可访问':'失败',ok:d.epg_status==='ok',bar:d.epg_status==='ok'?1:.15,color:d.epg_status==='ok'?'#22c55e':'#f59e0b'}];const compact=o.w<760,cols=compact?2:4,gap=12,cardW=(o.w-gap*(cols+1))/cols,cardH=compact?64:96,startY=compact?50:58;items.forEach((it,i)=>{const col=i%cols,row=Math.floor(i/cols);drawBarCard(ctx,gap+col*(cardW+gap),startY+row*(cardH+gap),cardW,cardH,it,o)});$('statusChartText').textContent='状态图表数据来源：旁路由实时状态接口，包括盒子网口、组播绕开代理、频道数量、EPG 可用性。'}
+function fmtDuration(s){s=Number(s||0);const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?`${h}小时${m}分`:`${m}分钟`}
+function parseTopChannels(s){return String(s||'').split('|').map(x=>{const i=x.lastIndexOf('=');return i>0?{name:x.slice(0,i),sec:Number(x.slice(i+1)||0)}:null}).filter(Boolean)}
+function renderTopChannels(rows){if(!rows.length){$('playStatsList').innerHTML='<span class="pill">暂无频道级观看数据</span><div class="small">开始播放后，系统会从 udpxy 状态页识别当前组播地址，并映射到节目单频道名累计时长。</div>';return}const max=Math.max(...rows.map(x=>x.sec),1);$('playStatsList').innerHTML=rows.map((r,i)=>`<div class="link-card" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px"><b>${i+1}. ${esc(r.name)}</b><span>${fmtDuration(r.sec)}</span></div><div style="height:10px;border-radius:999px;background:color-mix(in srgb,var(--bg) 84%,#000);overflow:hidden;margin-top:8px"><div style="height:100%;width:${Math.max(6,Math.round(r.sec/max*100))}%;background:var(--accent);border-radius:999px"></div></div></div>`).join('')}
+function drawPlayStats(d){const c=$('playChart'),o=fitCanvas(c),ctx=o.ctx;chartShell(o,'播放统计','基于旁路由本地可见数据，不依赖播放器/Emby API');const sec=Number(d.play_total_seconds||0),mb=Number(d.play_total_mb||0),active=Number(d.play_active_clients||0),maxc=Number(d.play_max_clients||0);const items=[{name:'累计观看时长',value:fmtDuration(sec),ok:true,bar:Math.min(1,sec/86400),color:'#60a5fa'},{name:'当前观看连接',value:String(active),ok:true,bar:Math.min(1,active/4)||.04,color:'#22c55e'},{name:'估算消耗流量',value:mb>1024?(mb/1024).toFixed(1)+' GB':mb+' MB',ok:true,bar:Math.min(1,mb/20480)||.04,color:'#f59e0b'},{name:'最高同时连接',value:String(maxc),ok:true,bar:Math.min(1,maxc/4)||.04,color:'#a78bfa'}];const compact=o.w<760,cols=compact?2:4,gap=12,cardW=(o.w-gap*(cols+1))/cols,cardH=compact?78:116,startY=compact?58:66;items.forEach((it,i)=>{const col=i%cols,row=Math.floor(i/cols);drawBarCard(ctx,gap+col*(cardW+gap),startY+row*(cardH+gap),cardW,cardH,it,o)});$('playStatsText').textContent='播放数据来源：'+(d.play_source||'本地udpxy连接数+IPTV入口流量增量')+'；频道名来自 udpxy 当前组播地址与 new.m3u 映射。';renderTopChannels(parseTopChannels(d.play_top_channels))}
+function roundRect(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();if(fill)ctx.fill();if(stroke)ctx.stroke()}
+async function loadStatus(){const r=await fetch('/cgi-bin/iptv-status');const d=await r.json();const cards=[['LAN 地址',d.lan_ip,'ok',false],['IPTV 桥',`${d.iptv_iface} / ${d.iptv_link}`,d.iptv_link==='UP'?'ok':'bad',d.iptv_link!=='UP'],['盒子侧 USB 抓包口',`${d.capture_iface||'-'} / ${d.capture_link||'-'}`,d.capture_link==='UP'?'ok':'warn',false],['IPTV 地址',d.iptv_ip||'未获取','muted',false],['代理服务',d.proxy_status,String(d.proxy_status).startsWith('running')?'ok':'warn',false],['组播绕开代理',d.nikki_state==='direct'?'正常 direct':'异常 proxy',d.nikki_state==='direct'?'ok':'bad',d.nikki_state!=='direct'],['频道数量',`${d.new_count}`,'muted',false],['EPG',d.epg_status||'-',d.epg_status==='ok'?'ok':'warn',false]];$('statusCards').innerHTML=cards.map(x=>`<div class="card ${x[3]?'danger-card':''}"><span class="sled ${x[2]}"></span><b>${esc(x[0])}</b><span class="${x[2]}">${esc(x[1])}</span></div>`).join('');$('mac').value=d.mac||'';$('hostname').value=d.hostname||'';$('vendorid').value=d.vendorid||'';$('clientid').value=d.clientid||'';$('proto').value=d.proto||'dhcp';$('iptvIf').value=d.iptv_iface||$('iptvIf').value;$('boxIf').value=d.capture_iface||$('boxIf').value;$('diag').innerHTML=`<span class="pill">组播入口: ${esc(d.multicast_route||'-')}</span><span class="pill">USB抓包口: ${esc(d.capture_iface||'-')}</span><span class="pill">Nikki: ${esc(d.nikki_state||'-')}</span><span class="pill">防火墙 IPTV 命中: ${esc(d.iptv_fw_packets||'0')}</span>`;drawTopology(d);window._iptvD=d;drawStatusDashboard(d);drawPlayStats(d);renderHealth(d)}
+async function act(action){$('log').textContent='执行中...';const r=await fetch('/cgi-bin/iptv-action?action='+encodeURIComponent(action)+authParams(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function pushSharedLog(text){try{await fetch('/cgi-bin/iptv-action?action=save_ui_log'+authParams(),{method:'POST',body:text})}catch(e){}}
+async function pushCaptureSharedLog(text){try{await fetch('/cgi-bin/iptv-action?action=save_capture_ui_log'+authParams(),{method:'POST',body:text})}catch(e){}}
+async function loadSharedLog(){try{const r=await fetch('/cgi-bin/iptv-action?action=get_ui_log'+authParams(),{method:'POST'});const txt=await r.text();if(txt.trim())$('log').textContent=txt}catch(e){}}
+async function loadCaptureSharedLog(){try{const r=await fetch('/cgi-bin/iptv-action?action=get_capture_ui_log'+authParams(),{method:'POST'});const txt=await r.text();if(txt.trim())$('captureLog').textContent=txt}catch(e){}}
+function startSharedLogPolling(){loadSharedLog();loadCaptureSharedLog();setInterval(()=>{if(!captureTimer&&!invalidTimer){loadSharedLog();loadCaptureSharedLog()}},5000)}
+async function downloadSharedLog(){const r=await fetch('/cgi-bin/iptv-action?action=get_ui_log'+authParams(),{method:'POST'});const txt=await r.text();const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='iptv-shared-log-'+new Date().toISOString().replace(/[:.]/g,'-')+'.txt';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800)}
+async function downloadCaptureSharedLog(){const r=await fetch('/cgi-bin/iptv-action?action=get_capture_ui_log'+authParams(),{method:'POST'});const txt=await r.text();const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='iptv-capture-log-'+new Date().toISOString().replace(/[:.]/g,'-')+'.txt';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800)}
+async function clearSharedLog(){if(!confirm('确认清空系统日志？抓包文件、节目单、历史版本都不会删除。'))return;const r=await fetch('/cgi-bin/iptv-action?action=clear_ui_log'+authParams(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;setTimeout(loadSharedLog,600)}
+async function clearCaptureSharedLog(){if(!confirm('确认清空抓包日志？pcap、节目单、历史版本都不会删除。'))return;const r=await fetch('/cgi-bin/iptv-action?action=clear_capture_ui_log'+authParams(),{method:'POST'});const txt=await r.text();$('captureLog').textContent=txt;setTimeout(loadCaptureSharedLog,600)}
+async function actConfirm(action,msg){if(confirm(msg))await act(action)}
+let captureTimer=null;
+function stopCapturePolling(){if(captureTimer){clearInterval(captureTimer);captureTimer=null}}
+async function refreshCaptureStatus(){const status=$('captureStatus');const r=await fetch('/cgi-bin/iptv-action?action=capture_status'+authParams(),{method:'POST'});status.textContent=await r.text()}
+function startCapturePolling(){stopCapturePolling();refreshCaptureStatus();captureTimer=setInterval(refreshCaptureStatus,2000)}
+async function refreshVspStatus(){const status=$('captureStatus');const r=await fetch('/cgi-bin/iptv-action?action=vsp_status'+authParams(),{method:'POST'});const txt=await r.text();status.textContent=txt;$('captureLog').textContent=txt;if(txt.includes('阶段：完成')||txt.includes('阶段：VSP 获取失败')){pushCaptureSharedLog(txt);stopCapturePolling()}}
+function startVspPolling(){stopCapturePolling();refreshVspStatus();captureTimer=setInterval(refreshVspStatus,2000)}
+async function actCapture(action){const status=$('captureStatus');if(action!=='capture_status')stopCapturePolling();status.textContent='执行中...';$('captureLog').textContent='执行中...';if(action==='fetch_vsp_playlist')startVspPolling();const r=await fetch('/cgi-bin/iptv-action?action='+encodeURIComponent(action)+authParams(),{method:'POST'});const txt=await r.text();$('captureLog').textContent=txt;pushCaptureSharedLog(txt);if(action==='fetch_vsp_playlist'){status.textContent=txt+'\\n\\n正在刷新后台进度...';startVspPolling()}else{status.textContent=txt}if(action==='start_capture')startCapturePolling();if(action==='stop_capture')stopCapturePolling();setTimeout(loadStatus,800)}
+async function actCaptureConfirm(action,msg){if(confirm(msg))await actCapture(action)}
+let invalidTimer=null;
+function stopInvalidPolling(){if(invalidTimer){clearInterval(invalidTimer);invalidTimer=null}}
+function renderInvalidList(txt){const re=/疑似失效列表[:：]/;const part=re.test(txt)?txt.split(re).pop():'';const rows=part.split(/\n/).map(x=>x.trim()).filter(line=>line.includes('|http'));const box=$('invalidList');if(!rows.length){box.innerHTML=txt.includes('阶段：完成')?'<span class="pill">未发现可逐条删除的疑似失效源</span>':'';return}box.innerHTML=rows.map((line,i)=>{const p=line.split('|');const name=p.shift()||('疑似失效 '+(i+1));const url=p.join('|');return `<label class="link-card invalid-row"><input type="checkbox" class="invalid-check" value="${esc(url)}" aria-label="选择 ${esc(name)}"><div class="link-main"><b>${esc(name)}</b><a href="${esc(url)}" target="_blank">${esc(url)}</a></div></label>`}).join('')}
+async function refreshInvalidStatus(){const r=await fetch('/cgi-bin/iptv-action?action=validate_status'+authParams(),{method:'POST'});const txt=await r.text();$('invalidProgress').textContent=txt;renderInvalidList(txt);if(txt.includes('阶段：完成'))stopInvalidPolling()}
+async function validateChannels(){stopInvalidPolling();$('invalidProgress').textContent='启动检测中...';$('invalidList').innerHTML='';const r=await fetch('/cgi-bin/iptv-action?action=validate_channels'+authParams(),{method:'POST'});$('log').textContent=await r.text();refreshInvalidStatus();invalidTimer=setInterval(refreshInvalidStatus,2000)}
+async function stopValidateChannels(){stopInvalidPolling();const r=await fetch('/cgi-bin/iptv-action?action=stop_validate'+authParams(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);await refreshInvalidStatus()}
+function confirmDeleteInvalid(count,detail){if(!confirm(`准备删除 ${count} 条疑似失效源。\\n\\n后果：\\n1. 会从基础节目单 new.m3u 删除对应播放地址。\\n2. 会根据删除后的 new.m3u 重新生成 new-logo.m3u。\\n3. 删除前会自动生成历史备份，可在节目表编辑器恢复。\\n\\n${detail||''}\\n是否继续？`))return false;return confirm(`二次确认：真的删除 ${count} 条节目源吗？\\n\\n如果误删，请到节目表在线编辑器的历史版本恢复。`)}
+async function deleteSelectedInvalid(){const urls=[...document.querySelectorAll('.invalid-check:checked')].map(x=>x.value);if(!urls.length){alert('请先勾选要删除的节目源');return}const detail=urls.slice(0,8).join('\\n')+(urls.length>8?'\\n...':'');if(!confirmDeleteInvalid(urls.length,detail))return;let logs=[];for(const url of urls){$('log').textContent='删除中：'+url;const r=await fetch('/cgi-bin/iptv-action?action=delete_channel_url&url='+encodeURIComponent(url)+authParams(),{method:'POST'});logs.push(await r.text())}$('log').textContent=logs.join('\\n\\n');pushSharedLog($('log').textContent);await refreshInvalidStatus();setTimeout(loadStatus,800)}
+async function deleteInvalidUrl(encodedUrl){const url=decodeURIComponent(encodedUrl);if(!confirmDeleteInvalid(1,url))return;$('log').textContent='删除中...';const r=await fetch('/cgi-bin/iptv-action?action=delete_channel_url&url='+encodeURIComponent(url)+authParams(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);await refreshInvalidStatus();setTimeout(loadStatus,800)}
+async function blindScan(){const p=new URLSearchParams({action:'blind_scan',base:$('scanBase').value,start:$('scanStart').value,end:$('scanEnd').value,port:$('scanPort').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});$('log').textContent='盲扫准备中...';const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt)}
+async function switchMode(mode){if(!confirm('确认切换到 '+mode+' 模式？当前播放可能短暂中断。'))return;$('log').textContent='切换中...';const r=await fetch('/cgi-bin/iptv-action?action=switch_mode&mode='+encodeURIComponent(mode)+authParams(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function quickPortSetup(){const p=new URLSearchParams({action:'quick_port_setup',iptv_if:$('iptvIf').value,box_if:$('boxIf').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function debugUsbCapture(){const p=new URLSearchParams({action:'debug_usb_capture',box_if:$('boxIf').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});$('log').textContent='正在调试 USB 抓包口...';const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function setIptvInputIface(){if(!confirm('确认把 '+$('iptvIf').value+' 设为 IPTV 组播数据输入端口？'))return;const p=new URLSearchParams({action:'set_iptv_input_iface',iptv_if:$('iptvIf').value,box_if:$('boxIf').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});$('log').textContent='正在设置 IPTV 组播入口...';const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function saveChannel(){const p=new URLSearchParams({action:'save_channel',name:$('chName').value,addr:$('chAddr').value,proto:$('chProto').value,logo:$('chLogo').value,logoTpl:$('logoTpl').value,file:$('chFile').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});$('log').textContent='保存中...';const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,800)}
+async function applyIptv(){if(!confirm('确认修改 IPTV/WAN 口设置？这不会修改 LAN，但 IPTV 代理会短暂重启。'))return;const p=new URLSearchParams({action:'apply_iptv',iface:$('iface').value,proto:$('proto').value,mac:$('mac').value,hostname:$('hostname').value,vendorid:$('vendorid').value,clientid:$('clientid').value,pppoeUser:$('pppoeUser').value,pppoePass:$('pppoePass').value,auth_user:sessionStorage.iptvUser||'',auth_pass:sessionStorage.iptvPass||''});$('log').textContent='保存中...';const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const txt=await r.text();$('log').textContent=txt;pushSharedLog(txt);setTimeout(loadStatus,1500)}
+window.addEventListener('resize',()=>loadStatus().catch(()=>{}));
+requireLogin();loadTheme();loadConfig().catch(e=>$('log').textContent=e.message);loadEpgConfig().catch(()=>{});loadStatus().catch(e=>$('log').textContent=e.message);loadHistory().catch(()=>{});startSharedLogPolling();
+function drawTopology(d){const up=s=>String(s).toUpperCase()==='UP';const node=(label,sub,st)=>`<div class="tnode ${st}"><span class="tdot"></span><div><b>${esc(label)}</b><span>${esc(sub)}</span></div></div>`;const arrow=ok=>`<span class="tarrow ${ok?'':'bad'}">→</span>`;
+const iptvOk=up(d.iptv_link),boxState=d.capture_link||'-',boxOk=up(boxState),proxyRun=String(d.proxy_status||'').startsWith('running'),direct=d.nikki_state==='direct';
+const ifc=d.iptv_iface||'eth1',box=d.capture_iface||'eth2';
+let h='';
+h+='<div class="troute"><span class="tlabel">线路1 · 盒子直通</span><div class="topo-flow">';
+h+=node('光猫 IPTV','运营商组播','ok')+arrow(iptvOk);
+h+=node(ifc,'IPTV入口 '+(d.iptv_link||'-'),iptvOk?'ok':'bad')+arrow(true);
+h+=node('br-iptv','IPTV专用桥','ok')+arrow(boxOk);
+h+=node(box,'盒子口 '+boxState,boxOk?'ok':'warn')+arrow(boxOk);
+h+=node('IPTV 盒子',boxOk?'已连接':'未连接/关机',boxOk?'ok':'warn');
+h+='</div></div>';
+h+='<div class="troute"><span class="tlabel">线路2 · 播放器/终端</span><div class="topo-flow">';
+h+=node('光猫 IPTV','运营商组播','ok')+arrow(iptvOk);
+h+=node(ifc,'IPTV入口','ok')+arrow(direct);
+h+=node('br-iptv','组播 '+(direct?'直连':'走代理'),direct?'ok':'bad')+arrow(proxyRun);
+h+=node('udpxy',proxyRun?'运行中':'未运行',proxyRun?'ok':'warn')+arrow(true);
+h+=node('播放器','HTTP 单播','ok');
+h+='</div></div>';
+let note=`默认上网经 <span class="kw">br-lan</span> → 网关，IPTV 口不抢默认路由。组播 <span class="kw ${direct?'ok':'bad'}">${direct?'未走代理（正常）':'被代理拦截（异常，请点“修复被透明代理”）'}</span>。防火墙 IPTV 命中 ${esc(d.iptv_fw_packets||'0')}。`;
+if(!boxOk)note+=' 盒子口未连接通常是盒子关机或没插好，不影响线路2播放器走 udpxy。';
+h+='<div class="topo-note">'+note+'</div>';
+$('topologyView').innerHTML=h;}
+function showTab(name,btn){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.tab===name));document.querySelectorAll('#tabBar .tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===name));window.scrollTo({top:0,behavior:'smooth'});if(name==='overview')redrawCharts();try{localStorage.iptvTab=name}catch(e){}}
+function redrawCharts(){var d=window._iptvD;if(!d)return;try{drawStatusDashboard(d);drawPlayStats(d);drawTopology(d)}catch(e){}}
+var _iptvRsT;window.addEventListener('resize',function(){clearTimeout(_iptvRsT);_iptvRsT=setTimeout(redrawCharts,180)});
+function renderHealth(d){const hb=$('healthBar');if(!hb)return;const it=[];let bad=0,warn=0;const add=(label,val,state)=>{it.push(`<span class="hb-item"><span class="hb-dot ${state}"></span>${esc(label)} <b>${esc(val)}</b></span>`);if(state==='bad')bad++;else if(state==='warn')warn++;};
+add('IPTV桥',`${d.iptv_iface||'-'} ${d.iptv_link||'-'}`,d.iptv_link==='UP'?'ok':'bad');
+add('盒子口',`${d.capture_iface||'-'} ${d.capture_link||'-'}`,d.capture_link==='UP'?'ok':'warn');
+add('组播',d.nikki_state==='direct'?'直连':'走代理',d.nikki_state==='direct'?'ok':'bad');
+add('代理',String(d.proxy_status||'').startsWith('running')?'运行中':String(d.proxy_status||'-'),String(d.proxy_status||'').startsWith('running')?'ok':'warn');
+add('频道',d.new_count??'-','ok');
+add('EPG',d.epg_status==='ok'?'正常':(d.epg_status||'-'),d.epg_status==='ok'?'ok':'warn');
+const cls=bad?'bad':(warn?'warn':'ok');const txt=bad?'存在异常，请检查':(warn?'基本正常，有提醒':'整体正常');
+hb.className='healthbar '+cls;hb.innerHTML=`<span class="hb-title"><span class="hb-led"></span>${txt}</span>`+it.join('');}
+(function(){try{const t=localStorage.iptvTab;if(t){const b=document.querySelector('#tabBar .tab[data-tab="'+t+'"]');if(b){document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.dataset.tab===t));document.querySelectorAll('#tabBar .tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));}}}catch(e){}})();
+</script>
+</body>
+</html>

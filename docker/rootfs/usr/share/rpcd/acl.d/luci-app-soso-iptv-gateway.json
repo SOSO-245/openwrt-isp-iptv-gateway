@@ -1,0 +1,10 @@
+{
+  "luci-app-soso-iptv-gateway": {
+    "description": "Grant access to SOSO IPTV Gateway page",
+    "read": {
+      "ubus": {
+        "file": [ "list" ]
+      }
+    }
+  }
+}

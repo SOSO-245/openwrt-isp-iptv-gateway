@@ -1,0 +1,8 @@
+Package: soso-iptv-gateway
+Version: 1.1.5-1
+Architecture: all
+Maintainer: SOSO
+Section: luci
+Priority: optional
+Depends: libc, uhttpd, tcpdump, tc-tiny, kmod-sched-core, python3-light
+Description: SOSO IPTV gateway management page, USB STB passthrough, multicast capture playlist merger, wiki, self-check and editable dashboard.

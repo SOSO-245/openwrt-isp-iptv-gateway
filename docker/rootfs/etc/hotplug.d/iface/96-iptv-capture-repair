@@ -1,0 +1,35 @@
+#!/bin/sh
+
+CAP_FILE=/etc/iptv-capture-iface
+IN_FILE=/etc/iptv-input-iface
+CAP_IF="$(cat "$CAP_FILE" 2>/dev/null)"
+IN_IF="$(cat "$IN_FILE" 2>/dev/null)"
+[ -n "$CAP_IF" ] || CAP_IF=eth2
+[ -n "$IN_IF" ] || IN_IF=eth1
+
+is_usb=0
+dev="$(readlink -f "/sys/class/net/$INTERFACE/device" 2>/dev/null)"
+echo "$dev" | grep -q '/usb' && is_usb=1
+
+case "$ACTION" in
+  add|bind|ifup|online|move)
+    if [ "$INTERFACE" = "$CAP_IF" ] || [ "$INTERFACE" = "$IN_IF" ] || [ "$is_usb" = 1 ]; then
+      ip link set "$CAP_IF" up 2>/dev/null || true
+      ip link set "$IN_IF" up 2>/dev/null || true
+      ip link set "$CAP_IF" master br-iptv 2>/dev/null || true
+      ip link set "$IN_IF" master br-iptv 2>/dev/null || true
+      if [ "$(cat /etc/soso-iptv-mode 2>/dev/null)" = "udpxy" ]; then
+        ip=$(ip -4 -o addr show br-iptv 2>/dev/null | sed -n 's#.* inet \([0-9.]*\)/.*#\1#p' | head -1)
+        if [ -n "$ip" ]; then
+          uci set udpxy.@udpxy[0].source="$ip" 2>/dev/null || true
+          uci commit udpxy 2>/dev/null || true
+          /etc/init.d/udpxy restart >/dev/null 2>&1 || true
+        fi
+        tc qdisc del dev "$CAP_IF" ingress 2>/dev/null || true
+        tc qdisc del dev "$IN_IF" ingress 2>/dev/null || true
+      else
+        /etc/init.d/iptv-tc-bridge restart >/dev/null 2>&1 || true
+      fi
+    fi
+    ;;
+esac

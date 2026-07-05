@@ -1,0 +1,2872 @@
+#!/bin/sh
+printf 'Content-Type: text/plain; charset=utf-8\n\n'
+qs="$QUERY_STRING"
+urldecode(){ printf '%b' "$(printf '%s' "$1" | sed 's/+/ /g;s/%/\\x/g')"; }
+get(){ v=$(echo "&$qs" | sed -n "s/.*&$1=\([^&]*\).*/\1/p"); urldecode "$v"; }
+log(){ echo "[$(date '+%F %T')] $*"; }
+read_body(){
+  [ "${body_cached:-0}" = "1" ] && { printf '%s' "$body_cache"; return; }
+  len="${CONTENT_LENGTH:-0}"
+  body_cache=$([ "$len" -gt 0 ] 2>/dev/null && dd bs=1 count="$len" 2>/dev/null || true)
+  body_cached=1
+  printf '%s' "$body_cache"
+}
+cfg_file=/etc/soso-iptv-gateway.yaml
+theme_file=/etc/soso-iptv-theme.json
+auth_file=/etc/soso-iptv-auth
+epg_icon_sources_file=/etc/soso-iptv-epg-icon-sources
+epg_sources_file=/etc/soso-iptv-epg-sources
+epg_host_file=/etc/soso-iptv-epg-host
+logo_sources_file=/etc/soso-iptv-logo-sources
+channel_alias_file=/etc/soso-iptv-channel-aliases
+epg_schedule_file=/etc/soso-iptv-epg-schedule
+epg_last_file=/etc/soso-iptv-epg-last-run
+history_dir=/www/iptv-history
+history_count_file=/etc/soso-iptv-history-count
+assets_dir=/www/iptv/assets
+runtime_dir=/tmp/iptv
+trash_dir=$runtime_dir/trash
+readme_file=$runtime_dir/README.md
+capture_log=$trash_dir/capture.log
+capture_err=$trash_dir/capture.err
+capture_pid=$trash_dir/capture.pid
+capture_meta_log=$trash_dir/capture-meta.log
+capture_meta_err=$trash_dir/capture-meta.err
+capture_meta_pid=$trash_dir/capture-meta.pid
+capture_addrs_txt=$trash_dir/capture-addrs.txt
+analyze_log=$trash_dir/playback-analyze.log
+boot_pcap=$trash_dir/boot-config.pcap
+boot_log=$trash_dir/boot-config.log
+boot_pid=$trash_dir/boot-config.pid
+boot_strings=$trash_dir/boot-strings.txt
+boot_read_err=$trash_dir/boot-read.err
+boot_urls=$trash_dir/boot-urls.txt
+boot_tsv=$trash_dir/boot-playlist.tsv
+boot_addrs=$trash_dir/boot-addrs.txt
+boot_m3u=$trash_dir/boot-playlist.m3u
+boot_txt=$trash_dir/boot-playlist.txt
+boot_control_pcap=$trash_dir/boot-config-control.pcap
+boot_filter='tcp or arp or igmp or (udp and (port 53 or port 67 or port 68 or port 123 or port 546 or port 547 or port 1900))'
+vsp_channel_json=$trash_dir/vsp-query-all-channel.json
+vsp_channel_decoded=$trash_dir/vsp-query-all-channel.decoded.json
+vsp_playlist_tsv=$trash_dir/vsp-playlist.tsv
+vsp_valid_tsv=$trash_dir/vsp-valid.tsv
+vsp_playlist_m3u=$trash_dir/vsp-playlist.m3u
+vsp_playlist_txt=$trash_dir/vsp-playlist.txt
+vsp_play_log=$trash_dir/vsp-playchannel.log
+vsp_trace=$trash_dir/vsp-http-trace.txt
+vsp_progress=$trash_dir/vsp-progress.txt
+vsp_worker_pid=$trash_dir/vsp-worker.pid
+vsp_worker_out=$trash_dir/vsp-worker.out
+vsp_www_m3u=/www/vsp.m3u
+vsp_www_logo_m3u=/www/vsp-logo.m3u
+vsp_www_tsv=/www/vsp.tsv
+blindscan_txt=$trash_dir/blindscan.txt
+channel_candidates=$trash_dir/channel-candidates.txt
+invalid_channels=$trash_dir/invalid-channels.txt
+validate_progress=$trash_dir/validate-progress.txt
+validate_worker_pid=$trash_dir/validate-worker.pid
+validate_worker_out=$trash_dir/validate-worker.out
+ifup_log=$trash_dir/ifup.log
+ui_log=$trash_dir/ui-log.txt
+capture_ui_log=$trash_dir/capture-ui-log.txt
+epg_pipeline_log=$trash_dir/epg-pipeline.log
+epg_pipeline_pid=$trash_dir/epg-pipeline.pid
+iptv_input_file=/etc/iptv-input-iface
+capture_iface_file=/etc/iptv-capture-iface
+configured_epg_host(){
+  if [ -n "${EPG_HOST:-}" ]; then
+    printf '%s\n' "$EPG_HOST"
+    return
+  fi
+  [ -s "$epg_host_file" ] && sed -n '1{s/[[:space:]]//g;p;q}' "$epg_host_file" 2>/dev/null
+}
+lan_ip(){
+  ipaddr="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
+  [ -n "$ipaddr" ] || ipaddr="$(sed -n '1{s/[[:space:]]//g;p;q}' /etc/soso-iptv-lan-ip 2>/dev/null)"
+  [ -n "$ipaddr" ] || ipaddr="$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)"
+  [ -n "$ipaddr" ] || ipaddr="192.168.1.1"
+  printf '%s' "$ipaddr"
+}
+web_base(){ printf 'http://%s:8080' "$(lan_ip)"; }
+udpxy_base(){ printf 'http://%s:12123' "$(lan_ip)"; }
+ensure_runtime(){
+  mkdir -p "$runtime_dir" "$trash_dir"
+  cat > "$readme_file" <<'README'
+# SOSO IPTV runtime data
+
+这个目录用于集中保存 IPTV 管理插件运行时数据。目录位于 `/tmp/iptv`，重启路由后可能丢失；正式节目单仍在 `/www/new.m3u` 和 `/www/new-logo.m3u`。
+
+所有“可被一键清理”的抓包、分析和临时文件都放在二级目录 `/tmp/iptv/trash/`。清理按钮只删除 `/tmp/iptv/trash/` 内的内容，避免误删 `/tmp/iptv/README.md` 或以后可能需要保留的文件。
+
+## 文件说明
+
+- `README.md`：本说明文件。
+- `trash/boot-config.pcap`：开机配置精简抓包原始文件。默认只抓 TCP、DHCP、DNS、IGMP、ARP 等控制流量，不保存 UDP 组播视频流，便于后续分析。
+- `trash/boot-config-control.pcap`：从旧的大包中过滤出来的精简控制流量副本，仅在执行瘦身时生成。
+- `trash/boot-config.log`：启动开机抓包时 tcpdump 的运行日志，抓包失败时优先看这里。
+- `trash/boot-config.pid`：开机抓包进程号，停止抓包时使用。
+- `trash/boot-strings.txt`：从 `boot-config.pcap` 过滤出的可见文本/HTTP 明文相关内容，用于后续解析。
+- `trash/boot-read.err`：读取 pcap 时的错误输出。
+- `trash/boot-urls.txt`：从抓包明文中提取出的 HTTP/HTTPS URL，适合人工判断节目单入口。
+- `trash/boot-playlist.tsv`：开机抓包分析出的候选频道表，格式为 `组播地址|频道名|协议|台标URL`。
+- `trash/boot-addrs.txt`：从开机抓包中提取出的去重组播地址。
+- `trash/boot-playlist.m3u`：根据开机抓包候选结果生成的临时 M3U，可用于检查解析效果。
+- `trash/boot-playlist.txt`：根据开机抓包候选结果生成的简易 `频道名,URL` 列表。
+- `trash/vsp-query-all-channel.decoded.json`：从 VSP 的 `QueryAllChannel` 获取并解压后的完整频道元数据。
+- `trash/vsp-http-trace.txt`：从 pcap/分析文本中提取出的 VSP 请求、Host、Cookie、Referer 等关键会话信息。
+- `trash/vsp-playlist.tsv`：VSP 完整获取后生成的候选频道表，格式为 `频道号|频道名|频道ID|媒体ID|组播地址|协议|台标URL`。
+- `trash/vsp-valid.tsv`：VSP 候选源连通性测试结果，格式为 `状态|频道号|频道名|频道ID|媒体ID|组播地址|协议|台标URL|播放URL`。
+- `trash/vsp-playlist.m3u`：VSP 完整获取生成的临时 M3U，确认后可并入正式节目单。
+- `trash/vsp-playlist.txt`：VSP 完整获取生成的简易 `频道名,URL` 列表。
+- `trash/vsp-playchannel.log`：批量请求 `PlayChannel` 的过程日志。
+
+## 持久节目单
+
+- `/www/vsp.m3u`：VSP 获取后单独保存的基础候选节目单，不带台标，不会被清理临时数据按钮删除。
+- `/www/vsp.tsv`：VSP 候选源结构化清单，用于后续切换网络模式后按规则对比并合并到 `/www/new.m3u`。
+- `trash/capture.log`：原始组播抓包文本日志，记录抓包期间出现的 UDP 组播目的地址。
+- `trash/capture.err`：原始组播抓包错误日志。
+- `trash/capture.pid`：原始组播抓包进程号。
+- `trash/capture-meta.log`：抓原始组播时同步抓取的明文 HTTP/API 内容，用于尝试识别频道名和台标。
+- `trash/capture-meta.err`：HTTP/API 辅助抓包错误日志。
+- `trash/capture-meta.pid`：HTTP/API 辅助抓包进程号。
+- `trash/capture-addrs.txt`：从 `capture.log` 解析出的候选组播地址。
+- `trash/playback-analyze.log`：播放异常分析时抓到的 DHCP/IGMP/ARP 片段。
+- `trash/blindscan.txt`：组播盲扫生成的候选地址列表。
+- `trash/channel-candidates.txt`：频道有效性检测时解析出的待检测地址。
+- `trash/invalid-channels.txt`：频道有效性检测输出的异常频道列表。
+- `trash/ifup.log`：应用 IPTV 接口设置时的 `ifup` 输出。
+
+## 抓不到开机节目单时优先检查
+
+1. 管理页状态里的“盒子侧 USB 抓包口”必须是 UP。若显示 DOWN/NO-CARRIER，说明机顶盒没有连到 USB 网口、盒子未开机、网线不通或 USB 网卡未识别。
+2. 开机抓包需要先关闭机顶盒，再开始抓包，然后给机顶盒上电。只在盒子完全启动后抓，可能错过配置下载。
+3. 如果运营商使用 HTTPS/私有加密协议，pcap 里可能只能看到 DNS、TLS、IP 和端口，无法直接还原节目单明文。
+4. 如果盒子的节目单不是开机下载，而是进入直播 App 或打开频道页时才请求，需要在抓包期间进入直播页面并等待节目单加载。
+README
+}
+ensure_assets(){
+  mkdir -p "$assets_dir"
+}
+ensure_config(){
+  [ -s "$cfg_file" ] && return
+  lan="$(lan_ip)"
+  cat > "$cfg_file" <<CFG
+# SOSO IPTV Gateway 页面展示配置
+# 规则：
+# 1. # 开头为备注，不会显示在页面。
+# 2. 普通键值写法：key: value
+# 3. links 每行一个入口：- title: 名称 | url: 地址 | note: 备注
+# 4. 修改后在页面点“保存 YAML 配置”，刷新页面即可看到效果。
+
+title: IPTV 家庭网关
+author: SOSO
+subtitle: 旁路由版：IPTV 口接光猫，USB 网口接运营商 IPTV 盒子；抓包从 USB 盒子侧进行，组播源数据不经过 Nikki/OpenClash 代理。
+logoImage:
+
+links:
+  - title: 本地直播源 new | url: http://$lan:8080/new.m3u | note: 基础节目单
+  - title: 本地带台标 new-logo | url: http://$lan:8080/new-logo.m3u | note: 推荐给播放器使用
+  - title: VSP 候选 vsp | url: http://$lan:8080/vsp.m3u | note: VSP 单独保存基础版
+  - title: 本地 EPG | url: http://$lan:8080/epg.xml.gz | note: 旁路由本地 EPG
+CFG
+}
+ensure_logo_sources(){
+  if [ ! -s "$logo_sources_file" ]; then
+    cat > "$logo_sources_file" <<'LOGOSRC'
+# 可选：每行一个在线台标图片模板，必须包含 {name}。
+# 如果只有 XMLTV/EPG 源可提取图标，这里可以留空；EPG 源请填到“在线 EPG 源”。
+# 示例：https://example.com/logo/{name}.png
+LOGOSRC
+  fi
+}
+ensure_epg_sources(){
+  if [ ! -s "$epg_sources_file" ]; then
+    cat > "$epg_sources_file" <<'EPGSRC'
+# 每行一个在线 XMLTV/EPG 地址。支持 .xml / .xml.gz。
+# 51zmt 为已在路由器侧验证可生成本地 EPG 的默认源。
+http://epg.51zmt.top:8000/e.xml
+# 如需把外部 php-epg/NAS 作为可选源，可手动追加对应 t.xml.gz 地址。
+EPGSRC
+  fi
+}
+ensure_channel_aliases(){
+  if [ ! -s "$channel_alias_file" ]; then
+    cat > "$channel_alias_file" <<'ALIAS'
+# 频道别名规则：目标名 => regex:/表达式/flags
+# 当前 busybox 工具不完整支持 PCRE 负向判断；此规则保留原文供管理，
+# 实际 CCTV 归一化由插件内置等效规则处理。
+CCTV$1 => regex:/^CCTV[-\s]*(\d{1,2}(\s*P(LUS)?|[K\+])?)(?![\s-]*(美洲|欧洲)).*/i
+ALIAS
+  fi
+}
+ensure_epg_schedule(){
+  if [ ! -s "$epg_schedule_file" ]; then
+    cat > "$epg_schedule_file" <<'SCHED'
+enabled=1
+keep_days=14
+start=00:00
+end=23:59
+interval_hours=6
+interval_minutes=0
+SCHED
+  fi
+}
+ensure_auth(){
+  [ -s "$auth_file" ] && return
+  cat > "$auth_file" <<'AUTH'
+admin:admin
+AUTH
+  chmod 600 "$auth_file" 2>/dev/null || true
+}
+auth_ok(){
+  ensure_auth
+  local user="$1" pass="$2"
+  grep -Fxq "$user:$pass" "$auth_file" 2>/dev/null
+}
+history_limit(){
+  n=$(cat "$history_count_file" 2>/dev/null)
+  case "$n" in 3|4|5|6|7|8|9|10) echo "$n" ;; *) echo 5 ;; esac
+}
+backup_playlist(){
+  file="$1"
+  [ -f "/www/$file" ] || return 0
+  mkdir -p "$history_dir"
+  ts=$(date '+%Y%m%d-%H%M%S')
+  cp "/www/$file" "$history_dir/$file.$ts.bak" 2>/dev/null || return 0
+  limit=$(history_limit)
+  ls -1t "$history_dir/$file".*.bak 2>/dev/null | awk -v keep="$limit" 'NR>keep{print}' | while read -r old; do rm -f "$old"; done
+}
+strip_m3u_logos(){
+  file="$1"
+  [ -f "$file" ] || return 0
+  tmp="$file.tmp.$$"
+  awk '
+    /^#EXTINF/ {
+      gsub(/[[:space:]]*tvg-logo="[^"]*"/, "", $0)
+      print
+      next
+    }
+    { print }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+strip_m3u_logos_to(){
+  src="$1"; dst="$2"
+  [ -f "$src" ] || return 0
+  tmp="$dst.tmp.$$"
+  awk '
+    /^#EXTINF/ {
+      gsub(/[[:space:]]*tvg-logo="[^"]*"/, "", $0)
+      print
+      next
+    }
+    { print }
+  ' "$src" > "$tmp" && mv "$tmp" "$dst"
+}
+ensure_ubus_socket_links(){
+  mkdir -p /var/run/ubus 2>/dev/null || true
+  if [ -S /var/run/ubus/ubus.sock ]; then
+    [ -e /var/run/ubus.sock ] || ln -s /var/run/ubus/ubus.sock /var/run/ubus.sock 2>/dev/null || true
+  elif [ -S /var/run/ubus.sock ]; then
+    [ -e /var/run/ubus/ubus.sock ] || ln -s ../ubus.sock /var/run/ubus/ubus.sock 2>/dev/null || true
+  fi
+}
+restart_higo_auth_services(){
+  for svc in higoros higoos higoros-api higoos-api higo-api; do
+    [ -x "/etc/init.d/$svc" ] && "/etc/init.d/$svc" restart >/dev/null 2>&1 && echo "$svc: restarted"
+  done
+}
+probe_url(){ curl -m "${2:-5}" -fsS "$1" -o /dev/null 2>&1; }
+tune_udpxy_config(){
+  uci set udpxy.@udpxy[0].buffer_size='131072' 2>/dev/null || true
+  uci set udpxy.@udpxy[0].buffer_messages='2048' 2>/dev/null || true
+  uci set udpxy.@udpxy[0].buffer_time='10' 2>/dev/null || true
+  uci set udpxy.@udpxy[0].max_clients='12' 2>/dev/null || true
+  refresh_udpxy_source >/dev/null 2>&1 || true
+  uci commit udpxy 2>/dev/null || true
+}
+current_iptv_ip(){
+  ip=$(ip -4 -o addr show br-iptv 2>/dev/null | sed -n 's#.* inet \([0-9.]*\)/.*#\1#p' | head -1)
+  [ -n "$ip" ] && { echo "$ip"; return; }
+  ifstatus wan 2>/dev/null | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null
+}
+current_lan_gateway(){
+  gw=$(ip route show default dev br-lan 2>/dev/null | awk '/^default /{print $3; exit}')
+  [ -n "$gw" ] || gw=$(uci -q get network.lan.gateway)
+  [ -n "$gw" ] || gw=192.168.50.1
+  echo "$gw"
+}
+refresh_udpxy_source(){
+  ip=$(current_iptv_ip)
+  [ -n "$ip" ] || ip=$(ip -4 -o addr show "$(get_iptv_input_iface)" 2>/dev/null | sed -n 's#.* inet \([0-9.]*\)/.*#\1#p' | head -1)
+  [ -n "$ip" ] || return 1
+  uci set udpxy.@udpxy[0].source="$ip" 2>/dev/null || true
+  uci set udpxy.@udpxy[0].bind="$(lan_ip)" 2>/dev/null || true
+  uci set udpxy.@udpxy[0].port='12123' 2>/dev/null || true
+  uci commit udpxy 2>/dev/null || true
+  echo "$ip"
+}
+repair_network(){
+  uci set network.wan.defaultroute='0' 2>/dev/null || true
+  uci set network.wan.peerdns='0' 2>/dev/null || true
+  uci set network.wan.metric='500' 2>/dev/null || true
+  if [ -z "$(uci -q get network.iptv_mcast_239)" ]; then
+    uci set network.iptv_mcast_239='route' 2>/dev/null || true
+  fi
+  uci set network.iptv_mcast_239.interface='wan' 2>/dev/null || true
+  uci set network.iptv_mcast_239.target='239.0.0.0' 2>/dev/null || true
+  uci set network.iptv_mcast_239.netmask='255.0.0.0' 2>/dev/null || true
+  uci set network.iptv_mcast_239.metric='500' 2>/dev/null || true
+  uci commit network 2>/dev/null || true
+  iptv_if=$(get_iptv_input_iface); box_if=$(get_capture_iface)
+  ip link set "$iptv_if" up 2>/dev/null || true
+  ip link set "$box_if" up 2>/dev/null || true
+  configure_iptv_bridge "$iptv_if" "$box_if" >/dev/null 2>&1 || true
+  ip route show default dev br-iptv 2>/dev/null | while read -r line; do
+    [ -n "$line" ] && ip route del $line 2>/dev/null || true
+  done
+  ip route show 224.0.0.0/4 2>/dev/null | while read -r line; do
+    [ -n "$line" ] && ip route del $line 2>/dev/null || true
+  done
+  ip route show 239.0.0.0/8 2>/dev/null | while read -r line; do
+    echo "$line" | grep -q 'proto static' && continue
+    [ -n "$line" ] && ip route del $line 2>/dev/null || true
+  done
+  lan_gw=$(current_lan_gateway)
+  if ip route show default dev br-lan 2>/dev/null | grep -q '^default '; then
+    if ip route show default dev br-lan 2>/dev/null | grep -q 'proto static'; then
+      ip route del default via "$lan_gw" dev br-lan metric 10 2>/dev/null || true
+    fi
+  else
+    ip route replace default via "$lan_gw" dev br-lan metric 10 2>/dev/null || true
+  fi
+  ip route replace 239.0.0.0/8 dev br-iptv metric 500 2>/dev/null || true
+  if [ "$(cat /etc/soso-iptv-mode 2>/dev/null)" = "udpxy" ] && [ "$(uci -q get udpxy.@udpxy[0].disabled)" != "1" ]; then
+    stop_tc_bridge 2>/dev/null || true
+    refresh_udpxy_source >/dev/null 2>&1 || true
+    restart_proxy
+  else
+    /etc/init.d/iptv-tc-bridge restart >/dev/null 2>&1 || true
+  fi
+}
+get_iptv_input_iface(){
+  iface=$(cat "$iptv_input_file" 2>/dev/null)
+  [ -n "$iface" ] || iface=eth1
+  echo "$iface"
+}
+get_capture_iface(){
+  iface=$(cat "$capture_iface_file" 2>/dev/null)
+  [ -n "$iface" ] || iface=eth2
+  echo "$iface"
+}
+iface_exists(){ [ -d "/sys/class/net/$1" ]; }
+is_usb_iface(){
+  iface="$1"
+  dev=$(readlink -f "/sys/class/net/$iface/device" 2>/dev/null)
+  echo "$dev" | grep -q '/usb'
+}
+first_usb_iface(){
+  for p in /sys/class/net/*; do
+    iface=$(basename "$p")
+    case "$iface" in lo|br-*|docker*|veth*|ifb*|nikki*) continue ;; esac
+    is_usb_iface "$iface" && { echo "$iface"; return; }
+  done
+}
+iface_state_line(){
+  iface="$1"
+  state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null || echo missing)
+  carrier=$(cat "/sys/class/net/$iface/carrier" 2>/dev/null || echo "-")
+  mac=$(cat "/sys/class/net/$iface/address" 2>/dev/null || echo "-")
+  driver=$(basename "$(readlink -f "/sys/class/net/$iface/device/driver" 2>/dev/null)" 2>/dev/null)
+  [ -n "$driver" ] || driver="-"
+  printf '%s state=%s carrier=%s mac=%s driver=%s\n' "$iface" "$state" "$carrier" "$mac" "$driver"
+}
+configure_iptv_bridge(){
+  iptv_if="$1"; box_if="$2"
+  [ -n "$iptv_if" ] || iptv_if=$(get_iptv_input_iface)
+  [ -n "$box_if" ] || box_if=$(get_capture_iface)
+  [ "$iptv_if" = "$box_if" ] && { echo "IPTV 入口和盒子/USB 口不能相同：$iptv_if"; return 1; }
+  iface_exists "$iptv_if" || { echo "IPTV 入口不存在：$iptv_if"; return 1; }
+  iface_exists "$box_if" || { echo "盒子/USB 网口不存在：$box_if"; return 1; }
+  echo "$iptv_if" > "$iptv_input_file"
+  echo "$box_if" > "$capture_iface_file"
+  uci set network.iptvbr='device' 2>/dev/null || true
+  uci set network.iptvbr.name='br-iptv' 2>/dev/null || true
+  uci set network.iptvbr.type='bridge' 2>/dev/null || true
+  uci -q delete network.iptvbr.ports 2>/dev/null || true
+  uci add_list network.iptvbr.ports="$iptv_if" 2>/dev/null || true
+  uci add_list network.iptvbr.ports="$box_if" 2>/dev/null || true
+  uci set network.wan.device='br-iptv' 2>/dev/null || true
+  uci set network.wan.defaultroute='0' 2>/dev/null || true
+  uci set network.wan.peerdns='0' 2>/dev/null || true
+  uci set network.wan.metric='500' 2>/dev/null || true
+  uci commit network 2>/dev/null || true
+  ip link add name br-iptv type bridge 2>/dev/null || true
+  ip link set br-iptv up 2>/dev/null || true
+  ip link set "$iptv_if" up 2>/dev/null || true
+  ip link set "$box_if" up 2>/dev/null || true
+  ip link set "$iptv_if" master br-iptv 2>/dev/null || true
+  ip link set "$box_if" master br-iptv 2>/dev/null || true
+}
+repair_capture_bridge(){
+  req_box="$1"
+  iptv_if=$(get_iptv_input_iface)
+  box_if="$req_box"
+  [ -n "$box_if" ] || box_if=$(get_capture_iface)
+  if ! iface_exists "$box_if"; then
+    usb=$(first_usb_iface)
+    [ -n "$usb" ] && box_if="$usb"
+  fi
+  configure_iptv_bridge "$iptv_if" "$box_if" >/dev/null 2>&1 || return 1
+  /etc/init.d/iptv-tc-bridge restart >/dev/null 2>&1 || true
+  tc filter show dev "$box_if" ingress 2>/dev/null | grep -q "Redirect to device $iptv_if" || tc filter add dev "$box_if" ingress matchall action mirred egress redirect dev "$iptv_if" 2>/dev/null || true
+  tc filter show dev "$iptv_if" ingress 2>/dev/null | grep -q "Redirect to device $box_if" || tc filter add dev "$iptv_if" ingress matchall action mirred egress redirect dev "$box_if" 2>/dev/null || true
+  return 0
+}
+print_capture_bridge_debug(){
+  iptv_if=$(get_iptv_input_iface)
+  box_if=$(get_capture_iface)
+  log "USB 抓包网口调试开始"
+  echo "当前配置：IPTV入口=$iptv_if，盒子/USB口=$box_if"
+  echo
+  echo "可识别 USB 网卡："
+  found=0
+  for p in /sys/class/net/*; do
+    iface=$(basename "$p")
+    is_usb_iface "$iface" || continue
+    found=1
+    iface_state_line "$iface"
+  done
+  [ "$found" = 1 ] || echo "未识别到 USB 网卡。请重新插拔 USB 网卡，或检查驱动。"
+  echo
+  echo "关键网口状态："
+  iface_state_line "$iptv_if" 2>/dev/null || true
+  iface_state_line "$box_if" 2>/dev/null || true
+  iface_state_line br-iptv 2>/dev/null || true
+  echo
+  echo "桥接端口："
+  bridge link show 2>/dev/null || brctl show br-iptv 2>/dev/null || true
+  echo
+  echo "tc 透传规则："
+  echo "[$box_if -> $iptv_if]"
+  tc filter show dev "$box_if" ingress 2>/dev/null || true
+  echo "[$iptv_if -> $box_if]"
+  tc filter show dev "$iptv_if" ingress 2>/dev/null || true
+  echo
+  state=$(cat "/sys/class/net/$box_if/operstate" 2>/dev/null || echo missing)
+  if [ "$state" = "down" ]; then
+    echo "提示：$box_if 当前 down/NO-CARRIER，若盒子关机或正在重启这是正常的；规则已预置，盒子上电后应恢复联网。"
+  fi
+  log "USB 抓包网口调试结束"
+}
+restart_proxy(){ /etc/init.d/msd_lite stop >/dev/null 2>&1 || true; pkill -x msd_lite 2>/dev/null || true; pkill -x udpxy 2>/dev/null || true; tune_udpxy_config; /etc/init.d/udpxy restart >/dev/null 2>&1 || /etc/init.d/udpxy start >/dev/null 2>&1 || true; }
+stop_tc_bridge(){
+  /etc/init.d/iptv-tc-bridge stop >/dev/null 2>&1 || true
+  iptv_if=$(get_iptv_input_iface)
+  box_if=$(get_capture_iface)
+  tc qdisc del dev "$iptv_if" ingress 2>/dev/null || true
+  tc qdisc del dev "$box_if" ingress 2>/dev/null || true
+}
+test_first_stream(){
+  url=$(awk '!/^#/{if($0 ~ /^http/){print;exit}}' /www/new.m3u 2>/dev/null)
+  [ -n "$url" ] || { echo "未找到可测试的 HTTP 播放地址"; return 1; }
+  tmp="$trash_dir/udpxy-mode-test.ts"
+  rm -f "$tmp"
+  curl -L --max-time 5 -o "$tmp" "$url" >/dev/null 2>&1
+  size=$(wc -c < "$tmp" 2>/dev/null | tr -d ' ')
+  rm -f "$tmp"
+  echo "测试地址：$url"
+  echo "5秒内收到数据：${size:-0} bytes"
+  [ "${size:-0}" -gt 1048576 ]
+}
+stb_passthrough_mode(){
+  /etc/init.d/udpxy stop >/dev/null 2>&1 || true
+  /etc/init.d/msd_lite stop >/dev/null 2>&1 || true
+  pkill -x udpxy 2>/dev/null || true
+  pkill -x msd_lite 2>/dev/null || true
+  repair_capture_bridge "" >/dev/null 2>&1 || /etc/init.d/iptv-tc-bridge restart >/dev/null 2>&1 || true
+  echo passthrough >/etc/soso-iptv-mode
+}
+playlist_counts(){ echo "基础节目单 new.m3u: $(grep -c '^#EXTINF' /www/new.m3u 2>/dev/null || echo 0) 个频道"; echo "带台标节目单 new-logo.m3u: $(grep -c '^#EXTINF' /www/new-logo.m3u 2>/dev/null || echo 0) 个频道"; }
+refresh_vsp_trace(){
+  : > "$vsp_trace"
+  [ -s "$boot_strings" ] && grep -ahiE 'Host: [0-9.]+:33200|https?://[0-9.]+:33200|Cookie:|Set-Cookie:|JSESSIONID=|Referer:|Origin:|QueryAllChannel|PlayChannel|OnLineHeartbeat|Authenticate|userFilter|channelVersion' "$boot_strings" >> "$vsp_trace" 2>/dev/null || true
+  [ -s "$boot_urls" ] && grep -ahiE 'https?://[0-9.]+:33200|QueryAllChannel|PlayChannel|AuthenticationURL|index_start' "$boot_urls" >> "$vsp_trace" 2>/dev/null || true
+  if [ -s "$boot_pcap" ]; then
+    tcpdump -A -nn -r "$boot_pcap" 2>>"$boot_read_err" |
+      grep -aiE 'Host: [0-9.]+:33200|https?://[0-9.]+:33200|Cookie:|Set-Cookie:|JSESSIONID=|Referer:|Origin:|QueryAllChannel|PlayChannel|OnLineHeartbeat|Authenticate|userFilter|channelVersion' >> "$vsp_trace" 2>/dev/null || true
+  fi
+}
+extract_vsp_session(){
+  refresh_vsp_trace
+  vsp_host=$(grep -ahEo 'Host: [0-9.]+:33200' "$vsp_trace" 2>/dev/null | sed 's/^Host: //' | tail -1)
+  [ -n "$vsp_host" ] || vsp_host=$(grep -ahEo 'https?://[0-9.]+:33200' "$vsp_trace" 2>/dev/null | sed 's#https\?://##' | tail -1)
+  [ -n "$vsp_host" ] || vsp_host=$(grep -ahEo 'EPGIP_PORT="[0-9.]+:33200"' "$vsp_trace" 2>/dev/null | sed 's/^EPGIP_PORT="//;s/"$//' | tail -1)
+  [ -n "$vsp_host" ] || vsp_host=150.138.19.27:33200
+  vsp_cookie=$(grep -ahEo 'JSESSIONID=[A-Za-z0-9]+' "$vsp_trace" 2>/dev/null | tail -1)
+  vsp_user_filter=$(grep -ahEo 'userFilter[=:][0-9-]+' "$vsp_trace" 2>/dev/null | sed 's/.*[=:]//' | tail -1)
+  [ -n "$vsp_user_filter" ] || vsp_user_filter=$(grep -ahEo 'QueryAllChannel[?]userFilter=[0-9-]+' "$vsp_trace" 2>/dev/null | sed 's/.*=//' | tail -1)
+  [ -n "$vsp_user_filter" ] || vsp_user_filter=$(grep -ahEo '"userFilter"[[:space:]]*:[[:space:]]*"?[0-9-]+' "$vsp_trace" 2>/dev/null | sed 's/.*://;s/"//g;s/[[:space:]]//g' | tail -1)
+  vsp_referer=$(grep -ahEo 'http://[0-9.]+:33200/EPG/jsp/SDGDEPG/index_start.html[?][0-9]+' "$vsp_trace" 2>/dev/null | tail -1)
+  [ -n "$vsp_referer" ] || vsp_referer="http://$vsp_host/EPG/jsp/SDGDEPG/index_start.html"
+}
+fetch_vsp_all_channel(){
+  extract_vsp_session
+  [ -n "$vsp_cookie" ] || { echo "缺少 JSESSIONID。已从 pcap 和分析文本提取 VSP 线索到 $vsp_trace，但里面没有可用 Cookie。请确认抓包期间进入了首页/直播页，并且不要在抓包进程异常退出后才停止。"; return 1; }
+  [ -n "$vsp_user_filter" ] || { echo "缺少 userFilter。请先重新开机抓包，等待首页加载完成。"; return 1; }
+  curl -m 20 -sS \
+    -H 'Accept: application/json' \
+    -H 'Accept-Encoding: identity' \
+    -H 'User-Agent: webkit;Resolution(PAL,720P,1080P)' \
+    -H 'Content-Type: application/json' \
+    -H 'X-Requested-With: com.android.smart.terminal.iptv' \
+    -H "Referer: $vsp_referer" \
+    -H "Cookie: $vsp_cookie" \
+    --data '{"isReturnAllMedia":"0"}' \
+    "http://$vsp_host/VSP/V3/QueryAllChannel?userFilter=$vsp_user_filter&from=inMSAAccess" > "$vsp_channel_json"
+  if gzip -dc "$vsp_channel_json" > "$vsp_channel_decoded" 2>/dev/null; then :; else cp "$vsp_channel_json" "$vsp_channel_decoded"; fi
+  grep -q '"channelDetails"' "$vsp_channel_decoded"
+}
+play_url_for_channel(){
+  id="$1"; media="$2"
+  body=$(printf '{"channelID":"%s","mediaID":"%s","businessType":"BTV","isReturnProduct":"1","checkLock":{"checkType":"0"}}' "$id" "$media")
+  curl -m 4 -sS \
+    -H 'Accept: application/json' \
+    -H 'Accept-Encoding: identity' \
+    -H 'User-Agent: webkit;Resolution(PAL,720P,1080P)' \
+    -H 'Content-Type: application/json' \
+    -H 'X-Requested-With: com.android.smart.terminal.iptv' \
+    -H "Referer: $vsp_referer" \
+    -H "Cookie: $vsp_cookie" \
+    --data "$body" \
+    "http://$vsp_host/VSP/V3/PlayChannel?from=throughMSAAccess" |
+    sed -n 's/.*"playURL":"\([^"]*\)".*/\1/p' | sed 's#\\/#/#g' | head -1
+}
+play_response_for_channel(){
+  id="$1"; media="$2"
+  body=$(printf '{"channelID":"%s","mediaID":"%s","businessType":"BTV","isReturnProduct":"1","checkLock":{"checkType":"0"}}' "$id" "$media")
+  curl -m 4 -sS \
+    -H 'Accept: application/json' \
+    -H 'Accept-Encoding: identity' \
+    -H 'User-Agent: webkit;Resolution(PAL,720P,1080P)' \
+    -H 'Content-Type: application/json' \
+    -H 'X-Requested-With: com.android.smart.terminal.iptv' \
+    -H "Referer: $vsp_referer" \
+    -H "Cookie: $vsp_cookie" \
+    --data "$body" \
+    "http://$vsp_host/VSP/V3/PlayChannel?from=throughMSAAccess"
+}
+igmp_to_http(){ base="$(udpxy_base)"; printf '%s' "$1" | sed "s#^igmp://#$base/rtp/#;s#^rtp://#$base/rtp/#;s#^udp://#$base/udp/#"; }
+vsp_addr_to_http(){
+  proto="$1"; addr="$2"
+  case "$proto" in udp) echo "$(udpxy_base)/udp/$addr" ;; *) echo "$(udpxy_base)/rtp/$addr" ;; esac
+}
+sanitize_tsv_field(){ printf '%s' "$1" | tr '\r\n|' '   ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+stream_url_has_data(){
+  url="$1"
+  tmp=$(mktemp "$trash_dir/sp.XXXXXX" 2>/dev/null) || tmp="$trash_dir/sp.$$.$(date +%s%N 2>/dev/null)"
+  # 取流前 64KB 即判定：有流的频道 head 收满即结束(约 0.3s)，无流的等满 3 秒超时。比"傻等满超时"快很多，便于并发
+  curl -s -m 3 "$url" 2>/dev/null | head -c 65536 > "$tmp" 2>/dev/null
+  size=$(wc -c < "$tmp" 2>/dev/null | tr -d ' ')
+  rm -f "$tmp"
+  [ "${size:-0}" -gt 4096 ]
+}
+playlist_url_seen(){ grep -R -Fq "$1" /www/new.m3u /www/tv.m3u /www/new.txt /www/tv.txt 2>/dev/null; }
+build_existing_playlist_tsv(){
+  awk '
+    /^#EXTINF/ { ext=$0; name=$0; sub(/^.*,/,"",name); next }
+    /^http/ {
+      if (ext != "") {
+        print name "|" $0 "|" ext
+        ext=""
+      }
+    }
+  ' /www/new.m3u 2>/dev/null
+}
+capture_addrs(){
+  awk '
+    / > /{
+      dst=$5
+      sub(/:$/,"",dst)
+      if (dst ~ /^(22[4-9]|23[0-9])\./) {
+        n=split(dst,a,".")
+        if (n >= 5) {
+          port=a[n]
+          ip=a[1]
+          for (i=2;i<n;i++) ip=ip "." a[i]
+          if (port ~ /^[0-9]+$/) print ip ":" port
+        }
+      }
+    }
+  ' $capture_log 2>/dev/null | sort | uniq
+}
+capture_running(){
+  [ -s "$capture_pid" ] && kill -0 "$(cat "$capture_pid")" 2>/dev/null
+}
+playlist_has_addr(){ grep -R -Fq "$1" /www/new.m3u /www/tv.m3u /www/new.txt /www/tv.txt 2>/dev/null; }
+playlist_name_for_addr(){
+  addr="$1"
+  awk -v addr="$addr" '
+    /^#EXTINF/ { prev=$0; next }
+    index($0, addr) > 0 {
+      name=prev
+      sub(/^.*,/,"",name)
+      print name
+      exit
+    }
+  ' /www/new.m3u /www/tv.m3u 2>/dev/null
+}
+capture_logo(){
+  grep -Eao 'https?://[^[:space:]"'\''<>]+[.](png|jpg|jpeg|webp)([?][^[:space:]"'\''<>]*)?' $capture_meta_log 2>/dev/null | head -1
+}
+capture_name(){
+  sed -nE 's/.*(channelName|programName|serviceName|tvg-name|title|name)["= :]+([^"&|<>]{2,40}).*/\2/p; s/^#EXTINF.*,(.{2,40})$/\1/p' $capture_meta_log 2>/dev/null | sed 's/%20/ /g;s/^[[:space:]]*//;s/[[:space:]]*$//' | grep -vE '^https?://' | head -1
+}
+escape_attr(){ printf '%s' "$1" | sed 's/"/'\''/g;s/[<>]//g'; }
+normalize_channel_name(){
+  printf '%s\n' "$1" | sed 's/[[:space:]]//g;s/[（(].*[）)]//g;s/高清//g;s/超清//g;s/标清//g;s/HD//g;s/频道$//'
+}
+logo_candidate_names(){
+  raw="$1"
+  clean=$(printf '%s\n' "$raw" | sed 's/[[:space:]]//g;s/[（(].*[）)]//g;s/-//g;s/－//g;s/线路[0-9]*//g;s/4K超高清//g;s/超高清//g;s/4K//g;s/高清//g;s/超清//g;s/标清//g;s/LD//g;s/HD//g;s/IPTV//g;s/频道$//')
+  printf '%s\n%s\n' "$raw" "$clean"
+  case "$raw" in
+    *CCTV*4K*|*CCTV-4K*) echo CCTV4K ;;
+  esac
+  case "$raw" in
+    *CCTV4*美洲*) echo CCTV4美洲 ;;
+    *CCTV4*欧洲*) echo CCTV4欧洲; echo CCTV4EUO ;;
+    *澳门*Macau*|*Macau*卫视*) echo 澳门卫视 ;;
+    *NHK*WORLD*|*NHK-WORLD*) echo NHKWORLD ;;
+    *CGTN*英文*纪录*|*CGTN*纪录*) echo CGTN纪录; echo CGTNDOCUMENTARY ;;
+    *BTV*纪实*) echo BTV纪实 ;;
+    *KAKU*少儿*) echo KAKU少儿 ;;
+    *法兰西*24*) echo FRANCE24; echo 法兰西24 ;;
+    *欧洲新闻*) echo EURONEWS; echo 欧洲新闻 ;;
+  esac
+}
+epg_logo_for_name(){
+  host="$(configured_epg_host)"
+  [ -n "$host" ] || return 1
+  base="http://$host:8080/data/icon"
+  raw="$1"
+  logo_candidate_names "$raw" | awk 'NF && !seen[$0]++' | while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    for ext in png jpg jpeg webp; do
+      url="$base/$n.$ext"
+      probe=$(printf '%s' "$url" | sed 's/ /%20/g')
+      curl -m 2 -fsI "$probe" >/dev/null 2>&1 || curl -m 2 -fs "$probe" -o /dev/null 2>&1 || continue
+      echo "$url"
+      exit 0
+    done
+  done
+}
+is_png_file(){
+  [ -s "$1" ] || return 1
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import sys
+with open(sys.argv[1], 'rb') as f:
+    sys.exit(0 if f.read(8) == b'\x89PNG\r\n\x1a\n' else 1)
+PY
+}
+logo_placeholder_mark(){
+  printf '%s.placeholder' "$1"
+}
+is_placeholder_logo(){
+  [ -n "$1" ] && [ -f "$(logo_placeholder_mark "$1")" ]
+}
+mark_placeholder_logo(){
+  [ -n "$1" ] && : > "$(logo_placeholder_mark "$1")"
+}
+clear_placeholder_logo(){
+  [ -n "$1" ] && rm -f "$(logo_placeholder_mark "$1")"
+}
+make_placeholder_png(){
+  out="$1"
+  python3 - "$out" <<'PY' 2>/dev/null
+import struct, zlib, sys
+out=sys.argv[1]
+w=h=256
+rows=[]
+for y in range(h):
+    row=bytearray([0])
+    for x in range(w):
+        r=31 + (x*36)//255
+        g=111 + (y*64)//255
+        b=235 - ((x+y)*55)//510
+        row.extend([r,g,b,255])
+    rows.append(bytes(row))
+raw=b''.join(rows)
+def chunk(t,d):
+    return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
+png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack(">IIBBBBB",w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
+open(out,'wb').write(png)
+PY
+}
+save_logo_png(){
+  src="$1"; dst="$2"
+  [ -s "$src" ] || return 1
+  if is_png_file "$src"; then
+    cp "$src" "$dst"
+    return $?
+  fi
+  if command -v magick >/dev/null 2>&1; then magick "$src" "$dst" >/dev/null 2>&1 && is_png_file "$dst" && return 0; fi
+  if command -v convert >/dev/null 2>&1; then convert "$src" "$dst" >/dev/null 2>&1 && is_png_file "$dst" && return 0; fi
+  if command -v ffmpeg >/dev/null 2>&1; then ffmpeg -y -v error -i "$src" "$dst" >/dev/null 2>&1 && is_png_file "$dst" && return 0; fi
+  rm -f "$dst"
+  return 1
+}
+remove_logo_variants(){
+  base="$1"
+  rm -f "$base.svg" "$base.png" "$base.jpg" "$base.jpeg" "$base.webp" "$base.gif" "$base.placeholder"
+}
+update_playlist_metadata(){
+  addr="$1"; name=$(escape_attr "$2"); logo=$(escape_attr "$3")
+  [ -n "$addr" ] || return 0
+  [ -n "$name$logo" ] || return 0
+  changed=0
+  for f in /www/new.m3u /www/tv.m3u; do
+    [ -f "$f" ] || continue
+    tmp="$f.tmp.$$"
+    awk -v addr="$addr" -v name="$name" -v logo="$logo" '
+      function enrich(line) {
+        if (name != "") {
+          if (line ~ /tvg-name="/) gsub(/tvg-name="[^"]*"/, "tvg-name=\"" name "\"", line)
+          else sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-name=\"" name "\"", line)
+          sub(/,[^,]*$/, "," name, line)
+        }
+        return line
+      }
+      {
+        if (prev != "") {
+          if (index($0, addr) > 0) {
+            print enrich(prev)
+            print
+            prev=""
+            changed=1
+            next
+          }
+          print prev
+          prev=""
+        }
+        if ($0 ~ /^#EXTINF/) { prev=$0; next }
+        print
+      }
+      END { if (prev != "") print prev; if (changed) exit 7 }
+    ' "$f" > "$tmp"
+    rc=$?
+    mv "$tmp" "$f"
+    [ "$rc" = 7 ] && changed=$((changed+1))
+  done
+  [ "$changed" -gt 0 ] && return 0 || return 1
+}
+update_logo_metadata(){
+  addr="$1"; logo=$(escape_attr "$2")
+  [ -n "$addr" ] && [ -n "$logo" ] || return 0
+  changed=0
+  for f in /www/new-logo.m3u /www/tv-logo.m3u; do
+    [ -f "$f" ] || continue
+    tmp="$f.tmp.$$"
+    awk -v addr="$addr" -v logo="$logo" '
+      function enrich(line) {
+        if (line ~ /tvg-logo="/) gsub(/tvg-logo="[^"]*"/, "tvg-logo=\"" logo "\"", line)
+        else sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-logo=\"" logo "\"", line)
+        return line
+      }
+      {
+        if (prev != "") {
+          if (index($0, addr) > 0) {
+            print enrich(prev)
+            print
+            prev=""
+            changed=1
+            next
+          }
+          print prev
+          prev=""
+        }
+        if ($0 ~ /^#EXTINF/) { prev=$0; next }
+        print
+      }
+      END { if (prev != "") print prev; if (changed) exit 7 }
+    ' "$f" > "$tmp"
+    rc=$?
+    mv "$tmp" "$f"
+    [ "$rc" = 7 ] && changed=$((changed+1))
+  done
+  [ "$changed" -gt 0 ] && return 0 || return 1
+}
+remove_playlist_url(){
+  url="$1"
+  [ -n "$url" ] || return 1
+  for f in /www/new.m3u /www/new-logo.m3u /www/tv.m3u /www/tv-logo.m3u; do
+    [ -f "$f" ] || continue
+    tmp="$f.tmp.$$"
+    awk -v url="$url" '
+      /^#EXTINF/ { prev=$0; next }
+      {
+        if (prev != "") {
+          if ($0 == url) { prev=""; next }
+          print prev
+          prev=""
+        }
+        if ($0 != url) print
+      }
+      END { if (prev != "") print prev }
+    ' "$f" > "$tmp" && mv "$tmp" "$f"
+  done
+  for f in /www/new.txt /www/tv.txt; do
+    [ -f "$f" ] || continue
+    tmp="$f.tmp.$$"
+    grep -Fv "$url" "$f" > "$tmp" || true
+    mv "$tmp" "$f"
+  done
+}
+ensure_logo_helper(){
+  cat > /www/cgi-bin/iptv-action-logo-helper <<'HELPER'
+#!/bin/sh
+name="$1"
+host="${EPG_HOST:-$(sed -n '1{s/[[:space:]]//g;p;q}' /etc/soso-iptv-epg-host 2>/dev/null)}"
+[ -n "$host" ] || exit 0
+base="http://$host:8080/data/icon"
+logo_candidate_names(){
+  raw="$1"
+  clean=$(printf '%s\n' "$raw" | sed 's/[[:space:]]//g;s/[（(].*[）)]//g;s/-//g;s/－//g;s/线路[0-9]*//g;s/4K超高清//g;s/超高清//g;s/4K//g;s/高清//g;s/超清//g;s/标清//g;s/LD//g;s/HD//g;s/IPTV//g;s/频道$//')
+  printf '%s\n%s\n' "$raw" "$clean"
+  case "$raw" in
+    *CCTV*4K*|*CCTV-4K*) echo CCTV4K ;;
+  esac
+  case "$raw" in
+    *CCTV4*美洲*) echo CCTV4美洲 ;;
+    *CCTV4*欧洲*) echo CCTV4欧洲; echo CCTV4EUO ;;
+    *澳门*Macau*|*Macau*卫视*) echo 澳门卫视 ;;
+    *NHK*WORLD*|*NHK-WORLD*) echo NHKWORLD ;;
+    *CGTN*英文*纪录*|*CGTN*纪录*) echo CGTN纪录; echo CGTNDOCUMENTARY ;;
+    *BTV*纪实*) echo BTV纪实 ;;
+    *KAKU*少儿*) echo KAKU少儿 ;;
+    *法兰西*24*) echo FRANCE24; echo 法兰西24 ;;
+    *欧洲新闻*) echo EURONEWS; echo 欧洲新闻 ;;
+  esac
+}
+logo_candidate_names "$name" | awk 'NF && !seen[$0]++' | while IFS= read -r n; do
+  [ -n "$n" ] || continue
+  for ext in png jpg jpeg webp; do
+    url="$base/$n.$ext"
+    probe=$(printf '%s' "$url" | sed 's/ /%20/g')
+    curl -m 2 -fsI "$probe" >/dev/null 2>&1 || curl -m 2 -fs "$probe" -o /dev/null 2>&1 || continue
+    echo "$url"
+    exit 0
+  done
+done
+HELPER
+  chmod 755 /www/cgi-bin/iptv-action-logo-helper
+}
+rebuild_new_logo(){
+  ensure_logo_helper
+  decorate /www/new.m3u /www/new-logo.m3u ''
+  enrich_playlist_logos /www/new-logo.m3u >/dev/null 2>&1
+  rm -f /www/cgi-bin/iptv-action-logo-helper
+}
+enrich_playlist_logos(){
+  file="$1"
+  [ -f "$file" ] || return 0
+  tmp="$file.tmp.$$"
+  count_file="$trash_dir/logo-enrich-count.$$"
+  echo 0 > "$count_file"
+  awk -v count_file="$count_file" -v ver="$(date +%s)" '
+    function shquote(s) { gsub(/\047/, "\047\\\047\047", s); return "\047" s "\047" }
+    function cmd_logo(name,  cmd, out) {
+      cmd="/www/cgi-bin/iptv-action-logo-helper " shquote(name)
+      cmd | getline out
+      close(cmd)
+      return out
+    }
+    /^#EXTINF/ {
+      line=$0
+      name=line
+      sub(/^.*,/,"",name)
+      if ((line !~ /tvg-logo="/ || line ~ /live[.]fanmingming[.]com/) && name != "") {
+        logo=cmd_logo(name)
+        if (logo != "") {
+          if (line ~ /tvg-logo="/) gsub(/tvg-logo="[^"]*"/, "tvg-logo=\"" logo "?v=" ver "\"", line)
+          else sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-logo=\"" logo "?v=" ver "\"", line)
+          system("n=$(cat " count_file "); echo $((n+1)) > " count_file)
+        } else if (line ~ /live[.]fanmingming[.]com/) {
+          gsub(/[[:space:]]*tvg-logo="[^"]*"/, "", line)
+          system("n=$(cat " count_file "); echo $((n+1)) > " count_file)
+        }
+      }
+      print line
+      next
+    }
+    { print }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+  cat "$count_file" 2>/dev/null || echo 0
+  rm -f "$count_file"
+}
+build_local_logos(){
+  # $1 基础m3u(源)  $2 目标m3u；并发探测本地台标库，给匹配到的频道写 tvg-logo，输出匹配数
+  src="$1"; dst="$2"; force="$3"
+  host="$(configured_epg_host)"
+  base=""
+  [ -n "$host" ] && base="http://$host:8080/data/icon"
+  lan="$(lan_ip)"
+  cachedir=/www/iptv/logos
+  mkdir -p "$cachedir"
+  ver=$(date +%s)
+  work="$trash_dir/logowork.$$"; rm -rf "$work"; mkdir -p "$work"
+  awk -F',' '/^#EXTINF/{n=$0; sub(/^.*,/,"",n); if(n!="") print n}' "$src" | sort -u > "$work/names.txt"
+  i=0
+  while IFS= read -r nm; do
+    [ -n "$nm" ] || continue
+    i=$((i+1))
+    (
+      key=$(printf '%s' "$nm" | md5sum | cut -c1-16)
+      placeholder=0
+      [ -s "$cachedir/$key.png" ] && is_placeholder_logo "$cachedir/$key.png" && placeholder=1
+      # 非强制同步时：本地图标库已有(含手动上传/替换)则直接复用，不再访问 NAS
+      if [ "$force" != 1 ]; then
+        if [ -s "$cachedir/$key.png" ] && ! is_placeholder_logo "$cachedir/$key.png"; then printf '%s\t%s.png\n' "$nm" "$key" > "$work/r.$i"; exit 0; fi
+      fi
+      if [ -n "$base" ]; then
+        logo_candidate_names "$nm" | awk 'NF && !seen[$0]++' > "$work/cand.$i"
+        while IFS= read -r candname; do
+          [ -n "$candname" ] || continue
+          for ext in png jpg jpeg webp gif; do
+            cand="$candname.$ext"
+            if curl -s -m4 -fsS "$base/$cand" -o "$work/dl.$i" 2>/dev/null && [ -s "$work/dl.$i" ]; then
+              if save_logo_png "$work/dl.$i" "$cachedir/$key.png"; then
+                rm -f "$cachedir/$key.svg" "$cachedir/$key.jpg" "$cachedir/$key.jpeg" "$cachedir/$key.webp" "$cachedir/$key.gif"
+                clear_placeholder_logo "$cachedir/$key.png"
+                printf '%s\t%s.png\n' "$nm" "$key" > "$work/r.$i"
+                rm -f "$work/dl.$i"
+                exit 0
+              fi
+            fi
+            rm -f "$work/dl.$i"
+          done
+        done < "$work/cand.$i"
+      fi
+      if [ "$force" != 1 ] && [ "$placeholder" = 1 ]; then
+        printf '%s\t%s.png\n' "$nm" "$key" > "$work/r.$i"
+      fi
+      rm -f "$work/dl.$i"
+    ) &
+    [ $((i % 8)) -eq 0 ] && wait
+  done < "$work/names.txt"
+  wait
+  cat "$work"/r.* 2>/dev/null > "$work/map.tsv"
+  found=$(wc -l < "$work/map.tsv" 2>/dev/null | tr -d ' ')
+  awk -F'\t' -v lan="$lan" -v ver="$ver" '
+    NR==FNR{logo[$1]=$2; next}
+    /^#EXTINF/{
+      line=$0; name=line; sub(/^.*,/,"",name)
+      gsub(/[[:space:]]*tvg-logo="[^"]*"/,"",line)
+      if(name in logo) sub(/^#EXTINF:-1/,"#EXTINF:-1 tvg-logo=\"http://" lan ":8080/iptv/logos/" logo[name] "?v=" ver "\"",line)
+      print line; next
+    }
+    {print}
+  ' "$work/map.tsv" "$src" > "$work/out.m3u"
+  mv "$work/out.m3u" "$dst"
+  rm -rf "$work"
+  echo "${found:-0}"
+}
+online_fill_logos(){
+  # 为本地库尚缺台标的频道，从可选在线台标模板下载到本地库。输出新增数。
+  src="$1"
+  cachedir=/www/iptv/logos; mkdir -p "$cachedir"
+  srcfile=/etc/soso-iptv-logo-sources
+  work="$trash_dir/onfill.$$"; rm -rf "$work"; mkdir -p "$work"
+  ensure_logo_sources
+  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$srcfile" 2>/dev/null | grep -F '{name}' > "$work/tpls.txt" 2>/dev/null || true
+  [ -s "$work/tpls.txt" ] || { rm -rf "$work"; echo 0; return; }
+  awk -F',' '/^#EXTINF/{n=$0; sub(/^.*,/,"",n); if(n!="") print n}' "$src" | sort -u > "$work/names.txt"
+  i=0
+  while IFS= read -r nm; do
+    [ -n "$nm" ] || continue
+    i=$((i+1))
+    (
+      key=$(printf '%s' "$nm" | md5sum | cut -c1-16)
+      [ -s "$cachedir/$key.png" ] && ! is_placeholder_logo "$cachedir/$key.png" && exit 0
+      clean=$(printf '%s' "$nm" | sed 's/[[:space:]]//g;s/[（(].*[）)]//g;s/-//g;s/－//g;s/线路[0-9]*//g;s/4K超高清//g;s/超高清//g;s/4K//g;s/高清//g;s/超清//g;s/标清//g;s/LD//g;s/HD//g;s/IPTV//g;s/频道$//')
+      while IFS= read -r tpl; do
+        [ -n "$tpl" ] || continue
+        pre=${tpl%%"{name}"*}; post=${tpl#*"{name}"}
+        for cand in "$nm" "$clean"; do
+          [ -n "$cand" ] || continue
+          url="$pre$cand$post"
+          if curl -sL -m 12 -A "Mozilla/5.0" -fsS "$url" -o "$work/dl.$i" 2>/dev/null && [ -s "$work/dl.$i" ]; then
+            if save_logo_png "$work/dl.$i" "$cachedir/$key.png"; then
+              rm -f "$cachedir/$key.svg" "$cachedir/$key.jpg" "$cachedir/$key.jpeg" "$cachedir/$key.webp" "$cachedir/$key.gif"
+              clear_placeholder_logo "$cachedir/$key.png"
+              printf '1\n' > "$work/r.$i"
+              exit 0
+            fi
+          fi
+          rm -f "$work/dl.$i"
+        done
+      done < "$work/tpls.txt"
+    ) &
+    [ $((i % 6)) -eq 0 ] && wait
+  done < "$work/names.txt"
+  wait
+  filled=$(cat "$work"/r.* 2>/dev/null | wc -l | tr -d ' ')
+  rm -rf "$work"
+  echo "${filled:-0}"
+}
+generate_fallback_logos(){
+  src="/www/new.m3u"
+  [ -f "$src" ] || src="/www/new-logo.m3u"
+  [ -f "$src" ] || { echo 0; return; }
+  cachedir=/www/iptv/logos
+  mkdir -p "$cachedir"
+  work="$trash_dir/fallback-logos.$$"; rm -rf "$work"; mkdir -p "$work"
+  awk -F',' '/^#EXTINF/{name=$0; sub(/^.*,/,"",name); if(name!="") print name}' "$src" | sort -u > "$work/names.txt"
+  added=0
+  while IFS= read -r nm; do
+    [ -n "$nm" ] || continue
+    key=$(printf '%s' "$nm" | md5sum | cut -c1-16)
+    [ -s "$cachedir/$key.png" ] && continue
+    short=$(printf '%s' "$nm" | sed 's/线路[0-9]*//g;s/高清//g;s/超高清//g;s/标清//g;s/[[:space:]]//g' | cut -c1-8)
+    [ -n "$short" ] || short="$nm"
+    rm -f "$cachedir/$key.svg" "$cachedir/$key.jpg" "$cachedir/$key.jpeg" "$cachedir/$key.webp" "$cachedir/$key.gif"
+    if make_placeholder_png "$cachedir/$key.png"; then mark_placeholder_logo "$cachedir/$key.png"; added=$((added+1)); fi
+  done < "$work/names.txt"
+  rm -rf "$work"
+  echo "$added"
+}
+normalize_logo_key(){
+  printf '%s' "$1" | sed 's/[[:space:]]//g;s/[（(].*[）)]//g;s/-//g;s/－//g;s/线路[0-9]*//g;s/4K超高清//g;s/超高清//g;s/4K//g;s/高清//g;s/超清//g;s/标清//g;s/LD//g;s/HD//g;s/IPTV//g;s/频道$//'
+}
+ensure_epg_icon_sources(){
+  if [ ! -s "$epg_icon_sources_file" ]; then
+    cat > "$epg_icon_sources_file" <<'EPGSRCICON'
+# 每行一个 XMLTV/EPG 地址。支持 .xml / .xml.gz。
+# 只会读取 <channel> 里的 <display-name> 和 <icon src="...">。
+# 51zmt 为已在路由器侧验证可生成本地 EPG 的默认源。
+http://epg.51zmt.top:8000/e.xml
+# 如需读取外部 php-epg/NAS 的台标，可手动追加对应 t.xml.gz 地址。
+EPGSRCICON
+  fi
+  mkdir -p /www/iptv
+  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$epg_icon_sources_file" > /www/iptv/epg-icon-sources.txt 2>/dev/null || true
+  host="$(configured_epg_host)"
+  if [ -n "$host" ]; then
+    local_icon_epg="http://$host:8080/t.xml.gz"
+    grep -qxF "$local_icon_epg" /www/iptv/epg-icon-sources.txt 2>/dev/null || echo "$local_icon_epg" >> /www/iptv/epg-icon-sources.txt
+  fi
+}
+extract_epg_icon_map(){
+  xml="$1"
+  awk '
+    BEGIN { RS="</channel>"; ORS="" }
+    /<icon/ {
+      rec=$0
+      icon=""
+      if (match(rec, /icon[^>]*src="[^"]+"/)) {
+        v=substr(rec,RSTART,RLENGTH)
+        sub(/^.*src="/,"",v); sub(/"$/,"",v)
+        gsub(/&amp;/,"\\&",v)
+        icon=v
+      }
+      if (icon == "") next
+      rec=$0
+      seen=0
+      while (match(rec, /<display-name[^>]*>[^<]+/)) {
+        n=substr(rec,RSTART,RLENGTH)
+        sub(/^.*>/,"",n)
+        gsub(/^[[:space:]]+|[[:space:]]+$/,"",n)
+        if (n != "") { print n "\t" icon "\n"; seen=1 }
+        rec=substr(rec,RSTART+RLENGTH)
+      }
+      if (!seen && match($0, /channel[^>]*id="[^"]+"/)) {
+        n=substr($0,RSTART,RLENGTH)
+        sub(/^.*id="/,"",n); sub(/"$/,"",n)
+        if (n != "") print n "\t" icon "\n"
+      }
+    }
+  ' "$xml"
+}
+fill_epg_icons(){
+  src="/www/new.m3u"
+  [ -f "$src" ] || { echo 0; return; }
+  ensure_epg_icon_sources
+  cachedir=/www/iptv/logos
+  mkdir -p "$cachedir"
+  work="$trash_dir/epgicons.$$"; rm -rf "$work"; mkdir -p "$work"
+  awk -F',' '/^#EXTINF/{n=$0; sub(/^.*,/,"",n); if(n!="") print n}' "$src" | sort -u > "$work/names.txt"
+  : > "$work/wanted.tsv"
+  while IFS= read -r nm; do
+    [ -n "$nm" ] || continue
+    printf '%s\t%s\n' "$nm" "$(normalize_logo_key "$nm")" >> "$work/wanted.tsv"
+  done < "$work/names.txt"
+  : > "$work/epg-map.tsv"
+  ok_sources=0
+  total_sources=0
+  while IFS= read -r epg; do
+    [ -n "$epg" ] || continue
+    total_sources=$((total_sources+1))
+    raw="$work/src.$total_sources.raw"
+    xml="$work/src.$total_sources.xml"
+    if curl -sL -m 35 -A "Mozilla/5.0" -fsS "$epg" -o "$raw" 2>/dev/null && [ -s "$raw" ]; then
+      if gzip -t "$raw" >/dev/null 2>&1; then gzip -dc "$raw" > "$xml" 2>/dev/null || cp "$raw" "$xml"; else cp "$raw" "$xml"; fi
+      rows=$(extract_epg_icon_map "$xml" | wc -l | tr -d ' ')
+      if [ "${rows:-0}" -gt 0 ]; then
+        ok_sources=$((ok_sources+1))
+        extract_epg_icon_map "$xml" | while IFS="$(printf '\t')" read -r ch icon; do
+          [ -n "$ch" ] && [ -n "$icon" ] || continue
+          printf '%s\t%s\t%s\n' "$(normalize_logo_key "$ch")" "$ch" "$icon"
+        done >> "$work/epg-map.tsv"
+      fi
+    fi
+  done < /www/iptv/epg-icon-sources.txt
+  awk -F'\t' 'NF>=3 && !seen[$1]++ { print }' "$work/epg-map.tsv" > "$work/epg-map.uniq.tsv"
+  mv "$work/epg-map.uniq.tsv" "$work/epg-map.tsv"
+  cp "$work/epg-map.tsv" /www/iptv/epg-icon-map.tsv 2>/dev/null || true
+  added=0
+  matched=0
+  i=0
+  while IFS="$(printf '\t')" read -r nm key; do
+    [ -n "$nm" ] || continue
+    logo_url=$(awk -F'\t' -v key="$key" '$1==key{print $3; exit}' "$work/epg-map.tsv")
+    [ -n "$logo_url" ] || continue
+    matched=$((matched+1))
+    ckey=$(printf '%s' "$nm" | md5sum | cut -c1-16)
+    exists=0
+    [ -s "$cachedir/$ckey.png" ] && ! is_placeholder_logo "$cachedir/$ckey.png" && exists=1
+    [ "$exists" = 1 ] && continue
+    i=$((i+1))
+    if curl -sL -m 15 -A "Mozilla/5.0" -fsS "$logo_url" -o "$work/dl.$i" 2>/dev/null && [ -s "$work/dl.$i" ]; then
+      sz=$(wc -c < "$work/dl.$i" 2>/dev/null | tr -d ' ')
+      if [ "${sz:-0}" -gt 64 ]; then
+        if save_logo_png "$work/dl.$i" "$cachedir/$ckey.png"; then
+          rm -f "$cachedir/$ckey.svg" "$cachedir/$ckey.jpg" "$cachedir/$ckey.jpeg" "$cachedir/$ckey.webp" "$cachedir/$ckey.gif"
+          clear_placeholder_logo "$cachedir/$ckey.png"
+          added=$((added+1))
+        fi
+      fi
+    fi
+    rm -f "$work/dl.$i"
+  done < "$work/wanted.tsv"
+  echo "$added|$matched|$ok_sources|$total_sources"
+  rm -rf "$work"
+}
+epg_norm_awk='
+function norm(s) {
+  gsub(/&amp;/, "\\&", s)
+  gsub(/[ \t\r\n]/, "", s)
+  gsub(/（[^）]*）/, "", s)
+  gsub(/\([^)]*\)/, "", s)
+  gsub(/-/, "", s)
+  gsub(/－/, "", s)
+  gsub(/线路[0-9]*/, "", s)
+  gsub(/4K超高清/, "", s)
+  gsub(/超高清/, "", s)
+  gsub(/4K/, "", s)
+  gsub(/高清/, "", s)
+  gsub(/超清/, "", s)
+  gsub(/标清/, "", s)
+  gsub(/LD/, "", s)
+  gsub(/HD/, "", s)
+  gsub(/IPTV/, "", s)
+  gsub(/频道$/, "", s)
+  gsub(/专区$/, "", s)
+  gsub(/台$/, "", s)
+  gsub(/中文国际[美洲欧洲]*/, "", s)
+  gsub(/^BTV/, "", s)
+  gsub(/卫视$/, "", s)
+  return s
+}'
+update_local_epg(){
+  ensure_epg_sources
+  ensure_channel_aliases
+  command -v python3 >/dev/null 2>&1 || { echo "0|0|0|0|缺少 python3，无法生成本地 EPG"; return; }
+  [ -x /usr/bin/soso-epg-gen ] || { echo "0|0|0|0|缺少 /usr/bin/soso-epg-gen"; return; }
+  log "开始更新本地 EPG：按当前 M3U tvg-id 重写 XMLTV channel id..."
+  result=$(python3 /usr/bin/soso-epg-gen 2>&1)
+  ret=$?
+  log "本地 EPG 生成器输出：$result"
+  channels=$(grep -c '<channel ' /www/epg.xml 2>/dev/null | tr -d ' ')
+  programmes=$(grep -c '<programme ' /www/epg.xml 2>/dev/null | tr -d ' ')
+  if [ "$ret" = 0 ] && [ "${channels:-0}" -gt 0 ] && [ "${programmes:-0}" -gt 0 ]; then
+    echo "${channels:-0}|${programmes:-0}|1|1|OK"
+  else
+    echo "${channels:-0}|${programmes:-0}|0|0|${result:-本地 EPG 生成失败}"
+  fi
+}
+install_epg_cron(){
+  ensure_epg_schedule
+  enabled=$(sed -n 's/^enabled=//p' "$epg_schedule_file" | tail -1)
+  mkdir -p /etc/crontabs 2>/dev/null || true
+  tmp=/tmp/soso-iptv-cron.$$
+  [ -f /etc/crontabs/root ] && grep -v 'soso-iptv epg schedule' /etc/crontabs/root > "$tmp" || : > "$tmp"
+  if [ "$enabled" = 1 ]; then
+    echo "*/10 * * * * QUERY_STRING='action=epg_scheduled_update' /www/cgi-bin/iptv-action >/tmp/iptv/trash/epg-schedule.log 2>&1 # soso-iptv epg schedule" >> "$tmp"
+  fi
+  mv "$tmp" /etc/crontabs/root
+  /etc/init.d/cron restart >/dev/null 2>&1 || true
+}
+backup_local_epg(){
+  ensure_epg_schedule
+  . "$epg_schedule_file" 2>/dev/null || true
+  keep_days=${keep_days:-14}
+  case "$keep_days" in *[!0-9]*|'') keep_days=14 ;; esac
+  mkdir -p "$history_dir/epg"
+  ts=$(date '+%Y%m%d-%H%M%S')
+  [ -f /www/epg.xml.gz ] && cp /www/epg.xml.gz "$history_dir/epg/epg.xml.gz.$ts.bak" 2>/dev/null || true
+  find "$history_dir/epg" -type f -name 'epg.xml.gz.*.bak' -mtime +"$keep_days" -delete 2>/dev/null || true
+}
+run_epg_pipeline(){
+  log "开始一站式更新：本地 EPG、在线台标、兜底台标..."
+  epg_result=$(update_local_epg)
+  icon_result=$(fill_epg_icons)
+  online_added=$(online_fill_logos /www/new.m3u)
+  fallback_added=$(generate_fallback_logos)
+  tmp="$trash_dir/new-logo.pipeline.$$"
+  found=$(build_local_logos /www/new.m3u "$tmp")
+  backup_playlist new-logo.m3u
+  mv "$tmp" /www/new-logo.m3u
+  date '+%F %T' > "$epg_last_file"
+  log "一站式更新完成：EPG=$epg_result，EPG图标=$icon_result，网络台标=$online_added，兜底台标=$fallback_added，节目单台标=$found。"
+  echo "本地 EPG：$epg_result"
+  echo "EPG 图标汇总：$icon_result"
+  echo "网络台标新增：${online_added:-0}"
+  echo "兜底文字台标新增：${fallback_added:-0}"
+  echo "new-logo.m3u 当前台标：${found:-0}"
+}
+epg_pipeline_running(){
+  [ -s "$epg_pipeline_pid" ] || return 1
+  pid=$(cat "$epg_pipeline_pid" 2>/dev/null)
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+append_captured_channel(){
+  addr="$1"
+  proto="$2"
+  meta_name="$3"
+  meta_logo="$4"
+  [ -n "$proto" ] || proto=rtp
+  id=$(echo "$addr" | sed 's/[^0-9]/_/g')
+  name="${meta_name:-抓包新增-$id}"
+  url="$(udpxy_base)/$proto/$addr"
+  printf '#EXTINF:-1 tvg-id="%s" tvg-name="%s",%s\n%s\n' "$id" "$name" "$name" "$url" >> /www/new.m3u
+  printf '%s,%s\n' "$name" "$url" >> /www/new.txt
+}
+decorate(){ src="$1"; dst="$2"; tpl="$3"; awk -v tpl="$tpl" '
+BEGIN{FS="\n"}
+/^#EXTINF/ {
+  line=$0
+  name=$0
+  sub(/^.*,/,"",name)
+  id=name
+  gsub(/[[:space:]-]/,"",id)
+  logo=tpl
+  gsub(/\{name\}/,id,logo)
+  if (line !~ /tvg-id="/) sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-id=\"" id "\"", line)
+  if (line !~ /tvg-name="/) sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-name=\"" name "\"", line)
+  if (tpl != "" && line !~ /tvg-logo="/) sub(/^#EXTINF:-1/, "#EXTINF:-1 tvg-logo=\"" logo "\"", line)
+  print line
+  next
+}
+{print}
+' "$src" > "$dst"
+}
+action=$(get action)
+ensure_runtime
+case "$action" in
+  auth|change_auth|get_theme|get_config|get_playlist|get_history|get_ui_log|get_capture_ui_log|download_boot_capture|epg_scheduled_update|"")
+    ;;
+  *)
+    body_for_auth=$(read_body)
+    [ -n "$body_for_auth" ] && qs="$qs&$body_for_auth"
+    auth_ok "$(get auth_user)" "$(get auth_pass)" || { echo "未登录或账号密码错误"; exit 0; }
+    ;;
+esac
+case "$action" in
+  get_config)
+    ensure_config
+    cat "$cfg_file" ;;
+  get_ui_log)
+    echo "系统日志：$ui_log"
+    echo "说明：保存普通按钮、自检、网口设置、账号、节目表等操作结果。"
+    echo
+    [ -s "$ui_log" ] && tail -240 "$ui_log" || echo "暂无共享操作日志。"
+    ;;
+  get_capture_ui_log)
+    echo "抓包日志：$capture_ui_log"
+    echo "说明：保存开机包、VSP 获取、切台抓频道、抓包清理等状态。"
+    if [ -s "$vsp_progress" ]; then
+      echo
+      echo "===== VSP 当前进度 ====="
+      cat "$vsp_progress"
+    fi
+    if [ -s "$capture_log" ]; then
+      echo
+      echo "===== 切台抓包摘要 ====="
+      tmp=$trash_dir/capture-live-addrs.txt
+      capture_addrs > "$tmp"
+      echo "已抓到组播地址：$(wc -l < "$tmp" 2>/dev/null | tr -d ' ') 个"
+      tail -20 "$tmp" 2>/dev/null
+    fi
+    echo
+    echo "===== 最近抓包操作 ====="
+    [ -s "$capture_ui_log" ] && tail -240 "$capture_ui_log" || echo "暂无抓包共享日志。" ;;
+  save_ui_log)
+    body=$(read_body)
+    [ -n "$body" ] || { echo "没有收到日志内容"; exit 0; }
+    {
+      echo
+      echo "===== $(date '+%F %T') 来自页面操作 ====="
+      printf '%s\n' "$body"
+    } >> "$ui_log"
+    lines=$(wc -l < "$ui_log" 2>/dev/null | tr -d ' ')
+    if [ "${lines:-0}" -gt 800 ]; then
+      tail -600 "$ui_log" > "$ui_log.tmp.$$" && mv "$ui_log.tmp.$$" "$ui_log"
+    fi
+    echo "OK" ;;
+  save_capture_ui_log)
+    body=$(read_body)
+    [ -n "$body" ] || { echo "没有收到日志内容"; exit 0; }
+    {
+      echo
+      echo "===== $(date '+%F %T') 来自抓包操作 ====="
+      printf '%s\n' "$body"
+    } >> "$capture_ui_log"
+    lines=$(wc -l < "$capture_ui_log" 2>/dev/null | tr -d ' ')
+    if [ "${lines:-0}" -gt 800 ]; then
+      tail -600 "$capture_ui_log" > "$capture_ui_log.tmp.$$" && mv "$capture_ui_log.tmp.$$" "$capture_ui_log"
+    fi
+    echo "OK" ;;
+  clear_ui_log)
+    : > "$ui_log"
+    log "已清空系统日志：$ui_log" ;;
+  clear_capture_ui_log)
+    : > "$capture_ui_log"
+    : > "$vsp_progress" 2>/dev/null || true
+    : > "$capture_log" 2>/dev/null || true
+    rm -f "$capture_addrs_txt" "$trash_dir/capture-live-addrs.txt" 2>/dev/null || true
+    log "已清空抓包日志（含 VSP 进度与切台抓包摘要）：$capture_ui_log" ;;
+  repair_luci_menu)
+    echo "开始修复 LuCI 菜单/服务缓存..."
+    rm -f /tmp/luci-indexcache.* 2>/dev/null || true
+    rm -rf /tmp/luci-modulecache 2>/dev/null || true
+    ensure_ubus_socket_links
+    if ubus list >/dev/null 2>&1; then
+      echo "ubus: already OK"
+    elif [ -x /etc/init.d/ubus ]; then
+      /etc/init.d/ubus restart >/dev/null 2>&1 && echo "ubus: restarted" || echo "ubus: restart failed"
+      ensure_ubus_socket_links
+    else
+      echo "ubus: FAIL，且缺少 init 脚本；建议重启系统恢复 HigoOS 认证后端。"
+    fi
+    if [ -x /etc/init.d/rpcd ]; then /etc/init.d/rpcd restart >/dev/null 2>&1 && echo "rpcd: restarted" || echo "rpcd: restart failed"; else echo "rpcd: init script missing"; fi
+    ensure_ubus_socket_links
+    restart_higo_auth_services
+    if [ -x /etc/init.d/uhttpd ]; then /etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1; echo "uhttpd: reloaded"; fi
+    sleep 1
+    if ubus list >/dev/null 2>&1; then echo "ubus: OK"; else echo "ubus: FAIL"; fi
+    if curl -sS -m 5 http://127.0.0.1:8080/cgi-bin/luci/admin/services/soso-iptv-gateway 2>/dev/null | grep -q 'error500'; then
+      echo "LuCI: 仍返回 error500，请检查 rpcd/ubus 日志。"
+    else
+      echo "LuCI: 请求已不再返回 error500。"
+    fi
+    log "已执行 LuCI 菜单/服务缓存修复。" ;;
+  auth)
+    user=$(get user); pass=$(get pass)
+    auth_ok "$user" "$pass" && echo "OK" || echo "FAIL" ;;
+  change_auth)
+    body=$(read_body)
+    [ -n "$body" ] && qs="$qs&$body"
+    user=$(get user); pass=$(get pass); olduser=$(get olduser); oldpass=$(get oldpass)
+    auth_ok "$olduser" "$oldpass" || { echo "旧账号或密码不正确"; exit 0; }
+    [ -n "$user" ] && [ -n "$pass" ] || { echo "新账号或密码为空"; exit 0; }
+    case "$user" in *:*) echo "账号不能包含冒号 :"; exit 0 ;; esac
+    case "$pass" in *:*) echo "密码不能包含冒号 :"; exit 0 ;; esac
+    printf '%s:%s\n' "$user" "$pass" > "$auth_file"
+    chmod 600 "$auth_file" 2>/dev/null || true
+    log "已更新管理页登录账号" ;;
+  get_theme)
+    [ -s "$theme_file" ] && cat "$theme_file" || echo '{}' ;;
+  save_theme)
+    body=$(read_body)
+    [ -n "$body" ] || body='{}'
+    printf '%s' "$body" > "$theme_file"
+    log "已保存主题配置：$theme_file" ;;
+  save_theme_asset)
+    ensure_runtime
+    ensure_assets
+    asset=$(get asset)
+    ext=$(get ext)
+    case "$asset" in bg|logo) ;; *) echo "素材类型错误"; exit 0 ;; esac
+    case "$ext" in png|jpg|jpeg|webp|gif) ;; *) echo "图片格式只支持 png/jpg/jpeg/webp/gif"; exit 0 ;; esac
+    len="${CONTENT_LENGTH:-0}"
+    [ "$len" -gt 0 ] 2>/dev/null || { echo "没有收到图片数据"; exit 0; }
+    out="$assets_dir/theme-$asset.$ext"
+    tmp="$trash_dir/theme-$asset.$ext.$$"
+    head -c "$len" > "$tmp"
+    sz=$(wc -c < "$tmp" 2>/dev/null | tr -d ' ')
+    if [ "${sz:-0}" -ge 64 ]; then
+      rm -f "$assets_dir/theme-$asset".png "$assets_dir/theme-$asset".jpg "$assets_dir/theme-$asset".jpeg "$assets_dir/theme-$asset".webp "$assets_dir/theme-$asset".gif
+      mv "$tmp" "$out"
+      chmod 644 "$out" 2>/dev/null || true
+      echo "/iptv/assets/theme-$asset.$ext?v=$(date +%s)"
+    else
+      rm -f "$tmp"
+      echo "图片保存失败：数据过小或无效（$sz 字节）"
+    fi ;;
+  save_config)
+    body=$(read_body)
+    [ -n "$body" ] || { echo "YAML 内容为空，未保存"; exit 0; }
+    cp "$cfg_file" "$cfg_file.bak" 2>/dev/null || true
+    printf '%s' "$body" > "$cfg_file"
+    log "已保存 YAML 配置：$cfg_file" ;;
+  get_epg_config)
+    ensure_epg_sources
+    ensure_logo_sources
+    ensure_epg_icon_sources
+    ensure_channel_aliases
+    ensure_epg_schedule
+    echo "[epg_sources]"
+    cat "$epg_sources_file"
+    echo
+    echo "[logo_sources]"
+    cat "$logo_sources_file"
+    echo
+    echo "[channel_aliases]"
+    cat "$channel_alias_file"
+    echo
+    echo "[schedule]"
+    cat "$epg_schedule_file"
+    echo
+    echo "[status]"
+    [ -f /www/epg.xml.gz ] && echo "local_epg=/www/epg.xml.gz ($(du -h /www/epg.xml.gz 2>/dev/null | awk '{print $1}'))" || echo "local_epg=missing"
+    [ -s "$epg_last_file" ] && echo "last_run=$(cat "$epg_last_file")" || echo "last_run=never" ;;
+  save_epg_config)
+    body=$(read_body)
+    [ -n "$body" ] && qs="$qs&$body"
+    epg_sources=$(get epg_sources)
+    logo_sources=$(get logo_sources)
+    aliases=$(get channel_aliases)
+    schedule=$(get schedule)
+    [ -n "$epg_sources" ] || { echo "EPG 源为空，未保存"; exit 0; }
+    printf '%s\n' "$epg_sources" > "$epg_sources_file"
+    printf '%s\n' "$epg_sources" > "$epg_icon_sources_file"
+    tmp_logo="$trash_dir/logo-sources.$$"
+    : > "$tmp_logo"
+    if [ -n "$logo_sources" ]; then
+      printf '%s\n' "$logo_sources" | while IFS= read -r line; do
+        clean=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        case "$clean" in
+          ""|\#*) printf '%s\n' "$line" >> "$tmp_logo" ;;
+          *"{name}"*) printf '%s\n' "$line" >> "$tmp_logo" ;;
+          *.xml|*.xml.gz|*".xml?"*|*".xml.gz?"*|http*xml*|https*xml*) printf '%s\n' "$line" >> "$epg_icon_sources_file" ;;
+          *) printf '# 已忽略：%s（不是 {name} 台标模板；EPG/XML 地址请放到在线 EPG 源）\n' "$line" >> "$tmp_logo" ;;
+        esac
+      done
+    else
+      cat > "$tmp_logo" <<'LOGOSRC'
+# 可选：每行一个在线台标图片模板，必须包含 {name}。
+# 如果只有 XMLTV/EPG 源可提取图标，这里可以留空；EPG 源请填到“在线 EPG 源”。
+LOGOSRC
+    fi
+    mv "$tmp_logo" "$logo_sources_file"
+    [ -n "$aliases" ] && printf '%s\n' "$aliases" > "$channel_alias_file" || ensure_channel_aliases
+    [ -n "$schedule" ] && printf '%s\n' "$schedule" > "$epg_schedule_file" || ensure_epg_schedule
+    install_epg_cron
+    log "已保存本地 EPG/台标配置：EPG 源会同时用于图标提取；在线台标模板为空也正常。" ;;
+  update_local_epg)
+    log "开始更新本地 EPG..."
+    result=$(update_local_epg)
+    date '+%F %T' > "$epg_last_file"
+    log "本地 EPG 更新完成：$result"
+    lan="$(lan_ip)"
+    echo "本地 EPG 更新结果：$result"
+    echo "本地 EPG 地址：http://$lan:8080/epg.xml.gz"
+    echo "兼容地址：http://$lan:8080/t.xml.gz" ;;
+  epg_pipeline)
+    mkdir -p "$trash_dir"
+    if epg_pipeline_running; then
+      echo "一站式更新仍在运行中，进度如下："
+      cat "$epg_pipeline_log" 2>/dev/null
+      exit 0
+    fi
+    : > "$epg_pipeline_log"
+    au=$(get auth_user)
+    ap=$(get auth_pass)
+    (
+      QUERY_STRING="action=epg_pipeline_worker&auth_user=$au&auth_pass=$ap" /www/cgi-bin/iptv-action > "$epg_pipeline_log" 2>&1
+    ) &
+    echo $! > "$epg_pipeline_pid"
+    echo "一站式更新已在后台开始。"
+    echo "请看右侧更新数据日志，系统会自动刷新进度；期间不要重复点击。"
+    echo "PID=$(cat "$epg_pipeline_pid" 2>/dev/null)" ;;
+  epg_pipeline_worker)
+    run_epg_pipeline
+    date '+%F %T' > "$epg_last_file"
+    echo "DONE $(date '+%F %T')"
+    rm -f "$epg_pipeline_pid" ;;
+  epg_pipeline_status)
+    if epg_pipeline_running; then echo "RUNNING"; else echo "IDLE"; fi
+    cat "$epg_pipeline_log" 2>/dev/null ;;
+  epg_scheduled_update)
+    ensure_epg_schedule
+    . "$epg_schedule_file" 2>/dev/null || true
+    [ "$enabled" = 1 ] || { echo "EPG 定时更新未启用"; exit 0; }
+    now_hm=$(date '+%H:%M')
+    [ -n "$start" ] || start=00:00
+    [ -n "$end" ] || end=23:59
+    if [ "$start" \< "$end" ]; then
+      { [ "$now_hm" \< "$start" ] || [ "$now_hm" \> "$end" ]; } && { echo "不在更新时间窗口：$now_hm"; exit 0; }
+    fi
+    ih=${interval_hours:-6}; im=${interval_minutes:-0}
+    case "$ih$im" in *[!0-9]*|'') ih=6; im=0 ;; esac
+    interval=$((ih*3600+im*60)); [ "$interval" -lt 600 ] && interval=600
+    last=0
+    [ -s "$epg_last_file" ] && last=$(date -d "$(cat "$epg_last_file")" +%s 2>/dev/null || echo 0)
+    now=$(date +%s)
+    [ $((now-last)) -lt "$interval" ] && { echo "未到间隔周期"; exit 0; }
+    run_epg_pipeline
+    date '+%F %T' > "$epg_last_file" ;;
+  generate_fallback_logos_action)
+    n=$(generate_fallback_logos)
+    tmp="$trash_dir/new-logo.fallback.$$"
+    found=$(build_local_logos /www/new.m3u "$tmp")
+    backup_playlist new-logo.m3u
+    mv "$tmp" /www/new-logo.m3u
+    log "已生成兜底文字台标：新增 $n 个，当前节目单台标 $found 个。"
+    echo "已生成兜底文字台标：新增 $n 个。"
+    echo "当前 new-logo.m3u 台标数量：$found。" ;;
+  get_playlist)
+    file=$(get file)
+    case "$file" in
+      new.m3u|new-logo.m3u|vsp.m3u|vsp-logo.m3u) cat "/www/$file" 2>/dev/null ;;
+      *) echo "不允许读取该文件：$file" ;;
+    esac ;;
+  save_playlist)
+    file=$(get file)
+    case "$file" in
+      new.m3u|new-logo.m3u|vsp.m3u|vsp-logo.m3u)
+        backup_playlist "$file"
+        read_body > "/www/$file"
+        log "已保存节目表：/www/$file"
+        log "提示：在线编辑只保存当前选择的文件；需要生成/去除台标请使用对应的一键按钮。" ;;
+      *) echo "不允许保存该文件：$file" ;;
+    esac ;;
+  get_history)
+    file=$(get file); limit=$(history_limit)
+    case "$file" in new.m3u|new-logo.m3u|vsp.m3u|vsp-logo.m3u)
+      mkdir -p "$history_dir"
+      echo "history_count=$limit"
+      ls -1t "$history_dir/$file".*.bak 2>/dev/null | head -"$limit" | while read -r p; do
+        b=$(basename "$p")
+        ts=$(echo "$b" | sed -n "s/^$file\\.\\(.*\\)\\.bak$/\\1/p")
+        echo "$ts|$b|$(wc -c < "$p" 2>/dev/null)"
+      done ;;
+      *) echo "不允许读取历史：$file" ;;
+    esac ;;
+  restore_history)
+    file=$(get file); bak=$(get bak)
+    case "$file" in new.m3u|new-logo.m3u|vsp.m3u|vsp-logo.m3u) ;;
+      *) echo "不允许恢复该文件"; exit 0 ;;
+    esac
+    case "$bak" in *..*|/*|*/*) echo "非法历史文件"; exit 0 ;; esac
+    [ -f "$history_dir/$bak" ] || { echo "历史文件不存在：$bak"; exit 0; }
+    backup_playlist "$file"
+    cp "$history_dir/$bak" "/www/$file"
+    log "已恢复：$bak -> /www/$file" ;;
+  set_history_count)
+    n=$(get count)
+    case "$n" in 3|4|5|6|7|8|9|10) echo "$n" > "$history_count_file"; log "历史保留数量已设置为 $n" ;; *) echo "历史数量必须为 3-10" ;; esac ;;
+  self_check)
+    log "一键自检开始"
+    iptv_if=$(get_iptv_input_iface)
+    capif=$(cat /etc/iptv-capture-iface 2>/dev/null || echo eth2)
+    echo
+    echo "1. 网口状态"
+    ip -br link show "$iptv_if" 2>/dev/null || true
+    ip -br link show "$capif" 2>/dev/null || true
+    ip -br link show br-iptv 2>/dev/null || true
+    echo
+    echo "2. USB 盒子侧抓包口"
+    echo "capture_iface=$capif"
+    cat "/sys/class/net/$capif/operstate" 2>/dev/null | sed 's/^/state=/'
+    echo
+    echo "3. tc 二层透传规则"
+    tc filter show dev "$capif" ingress 2>/dev/null || echo "$capif 未配置 tc ingress"
+    tc filter show dev "$iptv_if" ingress 2>/dev/null || echo "$iptv_if 未配置 tc ingress"
+    echo
+    echo "4. 节目单数量"
+    playlist_counts
+    echo
+    echo "5. EPG"
+    if curl -m 3 -fsS http://127.0.0.1:8080/epg.xml.gz >/dev/null 2>&1 || curl -m 3 -fsS http://127.0.0.1:8080/t.xml.gz >/dev/null 2>&1; then
+      echo "EPG: OK，本机 /www/epg.xml.gz 可访问"
+    else
+      echo "EPG: FAIL，本机 EPG 不可访问，请在本地 EPG 管理里更新生成"
+    fi
+    echo
+    echo "6. 代理/抓包进程"
+    if pidof udpxy >/dev/null 2>&1; then
+      ps w | grep '[u]dpxy'
+    else
+      echo "udpxy 未运行，当前模式优先保证运营商盒子直通"
+    fi
+    pgrep -af tcpdump || echo "tcpdump 未运行"
+    log "一键自检结束" ;;
+  debug_usb_capture)
+    req=$(get box_if)
+    [ -n "$req" ] && echo "$req" > "$capture_iface_file"
+    repair_capture_bridge "$req"
+    rc=$?
+    print_capture_bridge_debug
+    [ "$rc" = 0 ] && echo "结果：已尝试把盒子/USB 网口调整为可抓包、可透传模式。" || echo "结果：修复失败，请看上面的网口是否存在。"
+    ;;
+  set_iptv_input_iface)
+    iptv_if=$(get iptv_if)
+    box_if=$(get box_if)
+    [ -n "$iptv_if" ] || { echo "请先填写 IPTV 数据入口网口"; exit 0; }
+    [ -n "$box_if" ] || box_if=$(get_capture_iface)
+    if configure_iptv_bridge "$iptv_if" "$box_if"; then
+      repair_capture_bridge "$box_if" >/dev/null 2>&1 || true
+      log "已将 $iptv_if 设置为 IPTV 组播数据输入端口。"
+      echo "盒子/USB 抓包口：$box_if"
+      echo "已写入：$iptv_input_file、$capture_iface_file"
+      echo "已加入 br-iptv 并重建 tc 透传规则。"
+      echo
+      print_capture_bridge_debug
+    else
+      echo "设置失败。"
+    fi ;;
+  analyze_playback)
+    log "播放异常分析开始"
+    iptv_if=$(get_iptv_input_iface); capif=$(get_capture_iface)
+    mode=$(cat /etc/soso-iptv-mode 2>/dev/null || echo passthrough)
+    fail=0
+    echo "===== 一、关键链路 ====="
+    il=$(cat /sys/class/net/$iptv_if/operstate 2>/dev/null)
+    [ "$il" = up ] && echo "[OK] IPTV 入口 $iptv_if UP" || { echo "[✗] IPTV 入口 $iptv_if 非 UP（$il）→ 检查光猫 IPTV 口接线"; fail=1; }
+    iptv_ip=$(current_iptv_ip)
+    [ -n "$iptv_ip" ] && echo "[OK] br-iptv 已取得 IPTV 地址 $iptv_ip" || { echo "[✗] br-iptv 未取得 IPTV DHCP 地址 → 点“一键网口/路由修复”（确认 wan(br-iptv) proto=dhcp）"; fail=1; }
+    ip route show default 2>/dev/null | grep -q 'dev br-lan' && echo "[OK] 默认路由经 br-lan，未被 IPTV 抢占" || { echo "[✗] 默认路由不在 br-lan → 点“一键网口/路由修复”"; fail=1; }
+    if ip route get 239.21.1.120 2>/dev/null | grep -q nikki; then echo "[✗] 组播被代理(nikki/openclash)拦截 → 点“修复被透明代理”"; fail=1; else echo "[OK] 组播 239.x 直连，未走代理"; fi
+    echo
+    echo "===== 二、播放方式（当前模式：$mode）====="
+    if pidof udpxy >/dev/null 2>&1 && netstat -lnt 2>/dev/null | grep -q ':12123 '; then
+      echo "[OK] udpxy 运行中并监听 12123（播放器走 udpxy 单播）"
+      usrc=$(uci -q get udpxy.@udpxy[0].source)
+      if [ "$usrc" = "$iptv_ip" ] || [ "$usrc" = "br-iptv" ]; then echo "[OK] udpxy 源 = $usrc"; else echo "[✗] udpxy 源（$usrc）与当前 IPTV 地址（$iptv_ip）不一致，是续租后最常见故障 → 点“更新IPTV地址(udpxy)”"; fail=1; fi
+    else
+      if [ "$mode" = udpxy ]; then echo "[✗] 当前 udpxy 模式但 udpxy 未运行/未监听 12123 → 点“udpxy 单播模式”或“重启代理”"; fail=1; else echo "[i] 当前直通/抓包模式（盒子直连正常）；播放器要用单播请切“udpxy 单播模式”"; fi
+    fi
+    echo
+    echo "===== 三、实际拉流测试（节目单第一个频道）====="
+    if test_first_stream; then echo "[OK] 已成功拉到组播流，单播播放链路正常"; else echo "[✗] 拉不到流 → 换一个正在直播的频道再试；或 IPTV 入口当前无该组播/盒子未播直播"; fail=1; fi
+    echo
+    echo "===== 四、盒子侧链路（$capif，8 秒抓 DHCP/IGMP/ARP）====="
+    link=$(cat /sys/class/net/$capif/operstate 2>/dev/null)
+    [ "$link" = up ] && echo "[OK] 盒子口 $capif UP" || echo "[i] 盒子口 $capif 非 UP（$link）：盒子关机/没插好时正常，不影响播放器走 udpxy"
+    rm -f "$analyze_log"
+    tcpdump -ni "$capif" -c 20 "port 67 or port 68 or igmp or arp" > "$analyze_log" 2>&1 &
+    p=$!; sleep 8; kill "$p" 2>/dev/null || true
+    grep -qi 'BOOTP/DHCP' "$analyze_log" && echo "- 看到 DHCP：盒子在请求/续租地址" || echo "- 未见 DHCP"
+    grep -qi 'igmp' "$analyze_log" && echo "- 看到 IGMP：盒子在请求频道组播" || echo "- 未见 IGMP（盒子未在播直播或未切台）"
+    echo
+    if [ "$fail" = 0 ]; then echo "★ 结论：关键链路与播放方式均正常。若播放器仍无画面，多为播放器或频道地址问题：优先用 new-logo.m3u、换频道、确认播放器支持 rtp/udp 单播。"; else echo "★ 结论：上面带 [✗] 的就是疑似故障点，按提示点对应的一键按钮修复后重试。"; fi
+    log "播放异常分析结束" ;;
+  clean_runtime)
+    log "开始清理 /tmp/iptv/trash/ 下的 IPTV 抓包/分析临时数据..."
+    [ -s "$capture_pid" ] && kill "$(cat "$capture_pid")" 2>/dev/null || true
+    [ -s "$capture_meta_pid" ] && kill "$(cat "$capture_meta_pid")" 2>/dev/null || true
+    [ -s "$boot_pid" ] && kill "$(cat "$boot_pid")" 2>/dev/null || true
+    pkill -f 'iptv-boot-config' 2>/dev/null || true
+    before=$(du -sh "$trash_dir" 2>/dev/null | awk '{print $1}')
+    rm -rf "$trash_dir"
+    ensure_runtime
+    after=$(du -sh "$trash_dir" 2>/dev/null | awk '{print $1}')
+    echo "已清理运行时临时数据目录：$trash_dir"
+    echo "清理前：${before:-未知}"
+    echo "清理后：${after:-未知}"
+    echo "保留上级目录和说明文件：$runtime_dir / $readme_file"
+    echo "未删除正式节目单：/www/new.m3u、/www/new-logo.m3u"
+    echo "未删除皮肤本地素材：$assets_dir"
+    echo "未删除主题配置：$theme_file"
+    echo "未删除节目表编辑历史：$history_dir" ;;
+  restart_proxy)
+    log "重启 IPTV 代理 udpxy..."; restart_proxy; ps w | grep '[u]dpxy' || true ;;
+  refresh_udpxy)
+    log "一键更新 udpxy IPTV 地址..."
+    old=$(uci -q get udpxy.@udpxy[0].source)
+    ip=$(refresh_udpxy_source)
+    if [ -z "$ip" ]; then
+      echo "未能读取到 br-iptv 当前 IPTV 地址。请确认 IPTV 口已接光猫且 wan(br-iptv) 已 DHCP 拿到地址。"
+      exit 0
+    fi
+    restart_proxy
+    echo "udpxy source: ${old:-未设置} -> $ip"
+    echo "bind: $(uci -q get udpxy.@udpxy[0].bind)  port: $(uci -q get udpxy.@udpxy[0].port)"
+    sleep 1
+    ps w | grep '[u]dpxy' >/dev/null && echo "udpxy 已按新地址重启。" || echo "警告：udpxy 进程未运行，请检查 udpxy 是否启用。"
+    log "udpxy 地址已更新为 $ip" ;;
+  repair_network)
+    log "一键网口/路由修复开始..."
+    echo "执行：拉起 IPTV/盒子网口、重建 br-iptv 与 tc 二层透传、固化 wan 不抢默认路由、恢复 LAN 默认路由、保留 239 组播专用路由。"
+    repair_network
+    refresh_udpxy_source >/dev/null 2>&1 || true
+    echo
+    echo "默认路由："; ip route show default 2>/dev/null || true
+    echo "239 组播路由："; ip route show 239.0.0.0/8 2>/dev/null || true
+    iptv_if=$(get_iptv_input_iface); box_if=$(get_capture_iface)
+    echo "IPTV 入口 $iptv_if: $(cat /sys/class/net/$iptv_if/operstate 2>/dev/null || echo missing)  盒子口 $box_if: $(cat /sys/class/net/$box_if/operstate 2>/dev/null || echo missing)  br-iptv: $(cat /sys/class/net/br-iptv/operstate 2>/dev/null || echo missing)"
+    echo "IPTV 当前地址：$(current_iptv_ip || echo 未获取)"
+    log "一键网口/路由修复完成。" ;;
+  setup_playable)
+    log "新装一键配置网络开始（目标：播放器/Emby 可直接播放）..."
+    echo "步骤 1/3：网口拉起 + br-iptv 桥 + 二层透传 + 路由修复（IPTV 不抢默认路由）"
+    repair_network
+    echo "步骤 2/3：启用 udpxy 单播（节目单频道走 http://LAN:12123）"
+    uci set udpxy.@udpxy[0].disabled='0' 2>/dev/null || true
+    uci commit udpxy 2>/dev/null || true
+    stop_tc_bridge 2>/dev/null || true
+    usrc=$(refresh_udpxy_source)
+    [ -n "$usrc" ] && echo "udpxy 已绑定当前 IPTV 地址：$usrc" || echo "提示：IPTV 口尚未拿到 DHCP 地址，接好光猫 IPTV 口后再点一次。"
+    restart_proxy
+    echo udpxy >/etc/soso-iptv-mode
+    echo "步骤 3/3：验证"
+    sleep 2
+    echo "默认路由：$(ip route show default 2>/dev/null)"
+    echo "239 组播：$(ip route show 239.0.0.0/8 2>/dev/null)"
+    iptv_if=$(get_iptv_input_iface); box_if=$(get_capture_iface)
+    echo "IPTV入口 $iptv_if：$(cat /sys/class/net/$iptv_if/operstate 2>/dev/null||echo missing)  盒子口 $box_if：$(cat /sys/class/net/$box_if/operstate 2>/dev/null||echo missing)"
+    echo "udpxy：$(netstat -lnt 2>/dev/null | grep -q ':12123 ' && echo 监听中 || echo 未监听)"
+    if test_first_stream; then echo "播放自检：OK，已收到组播流。播放器/Emby 使用 $(web_base)/new-logo.m3u"; else echo "播放自检：暂无流。请确认光猫 IPTV 口已接 $iptv_if、节目单非空；盒子在播直播频道时更易拿到组播。"; fi
+    log "新装一键配置完成。" ;;
+  refresh_playlist)
+    echo "旧设备同步功能已移除。请使用开机配置抓取、节目表在线编辑或手动导入。" ;;
+  decorate_logos)
+    ensure_runtime
+    [ -f /www/new.m3u ] || { echo "缺少基础节目单 /www/new.m3u，请先导入或抓取节目单。"; exit 0; }
+    online_added=$(online_fill_logos /www/new.m3u 2>/dev/null || echo 0)
+    epg_icon_result=$(fill_epg_icons 2>/dev/null || echo "0|0|0|0")
+    tmp="$trash_dir/new-logo.build.$$"
+    found=$(build_local_logos /www/new.m3u "$tmp")
+    if [ "${found:-0}" -eq 0 ]; then
+      rm -f "$tmp"
+      echo "未匹配到任何可用台标，已取消，未改动带台标节目单（避免清空）。"
+      echo "可在“台标库管理”手动上传，或在 /etc/soso-iptv-logo-sources、/etc/soso-iptv-epg-icon-sources 添加可访问的在线源。"
+      exit 0
+    fi
+    backup_playlist new-logo.m3u
+    mv "$tmp" /www/new-logo.m3u
+    log "已在基础节目单基础上匹配本地台标库并生成带台标节目单：共 $found 个台标。"
+    echo "基础节目单保持不变：/www/new.m3u"
+    echo "带台标节目单已写入：/www/new-logo.m3u（共 $found 个台标）"
+    echo "本次补全：在线台标新增 ${online_added:-0} 个；EPG 图标匹配 ${epg_icon_result}。"
+    echo "本地推荐： $(web_base)/new-logo.m3u" ;;
+  sync_toolbox_logos)
+    ensure_runtime
+    host="$(configured_epg_host)"
+    if [ -z "$host" ]; then
+      echo "未配置外部工具箱主机，已取消，未改动本地库。"
+      echo "当前插件已不依赖 php-epg；需要把 NAS/php-epg 当素材仓库时，请把主机 IP 写入 /etc/soso-iptv-epg-host 后再点本按钮。"
+      echo "普通补标请使用“一键增加台标”或“从在线 EPG 拉取图标”。"
+      exit 0
+    fi
+    if ! curl -s -m4 -fI "http://$host:8080/data/icon/CCTV1.png" >/dev/null 2>&1 && ! curl -s -m4 -fI "http://$host:8080/data/icon/湖南卫视.png" >/dev/null 2>&1; then
+      echo "外部工具箱台标库($host) 当前不可达，已取消，未改动本地库。"
+      echo "请确认 /etc/soso-iptv-epg-host 中的主机在线，且 /data/icon/CCTV1.png 或 /data/icon/湖南卫视.png 可访问。"
+      exit 0
+    fi
+    tmp="$trash_dir/new-logo.sync.$$"
+    found=$(build_local_logos /www/new.m3u "$tmp" 1)
+    if [ "${found:-0}" -eq 0 ]; then rm -f "$tmp"; echo "未从工具箱同步到任何台标，已取消，未改动本地库。"; exit 0; fi
+    backup_playlist new-logo.m3u
+    mv "$tmp" /www/new-logo.m3u
+    cnt=$(ls /www/iptv/logos 2>/dev/null | wc -l | tr -d ' ')
+    sz=$(du -sh /www/iptv/logos 2>/dev/null | cut -f1)
+    log "已从外部工具箱强制同步台标库：本节目单匹配 $found 个。"
+    echo "已从外部工具箱强制重新同步：当前节目单匹配 $found 个台标，已全部下载/更新到旁路由本地库。"
+    echo "本地台标库 /www/iptv/logos：$cnt 个文件，约 ${sz:-?}。"
+    echo "说明：工具箱共有约 2900+ 图标，这里只同步当前节目单实际用到的频道，避免占满路由器存储；其余可在“台标库管理”里逐个上传替换。" ;;
+  fetch_online_logos)
+    ensure_runtime
+    if ! curl -sL -m 12 -A "Mozilla/5.0" -fsS "https://raw.githubusercontent.com/fanmingming/live/main/tv/CCTV1.png" -o /dev/null 2>/dev/null; then
+      echo "无法访问网络台标源（默认 GitHub）。请确认旁路由能联网，或在 /etc/soso-iptv-logo-sources 配置可达的台标源（每行一个，含 {name}）。"
+      exit 0
+    fi
+    filled=$(online_fill_logos /www/new.m3u)
+    tmp="$trash_dir/new-logo.online.$$"
+    found=$(build_local_logos /www/new.m3u "$tmp")
+    backup_playlist new-logo.m3u
+    mv "$tmp" /www/new-logo.m3u
+    cnt=$(ls /www/iptv/logos 2>/dev/null | wc -l | tr -d ' ')
+    log "网络台标补全：新增 $filled 个，当前节目单台标共 $found。"
+    echo "已从在线 EPG/台标源补全缺失台标：本次新增 $filled 个。"
+    echo "当前节目单台标共 $found 个，已全部缓存到旁路由本地库（$cnt 个文件）。"
+    echo "在线源可在 /etc/soso-iptv-logo-sources 自定义（每行一个、含 {name}，可多源汇总）；默认 GitHub fanmingming 图库。" ;;
+  fetch_epg_icons)
+    ensure_runtime
+    log "开始从在线 EPG/XMLTV 汇总频道台标..."
+    result=$(fill_epg_icons)
+    added=$(echo "$result" | cut -d'|' -f1)
+    matched=$(echo "$result" | cut -d'|' -f2)
+    ok_sources=$(echo "$result" | cut -d'|' -f3)
+    total_sources=$(echo "$result" | cut -d'|' -f4)
+    tmp="$trash_dir/new-logo.epg.$$"
+    found=$(build_local_logos /www/new.m3u "$tmp")
+    backup_playlist new-logo.m3u
+    mv "$tmp" /www/new-logo.m3u
+    lan="$(lan_ip)"
+    cnt=$(ls /www/iptv/logos 2>/dev/null | wc -l | tr -d ' ')
+    log "在线 EPG 台标汇总完成：新增 $added，匹配 $matched，源 $ok_sources/$total_sources，当前节目单台标 $found。"
+    echo "在线 EPG/XMLTV 源：成功解析 ${ok_sources:-0}/${total_sources:-0} 个。"
+    echo "匹配现有节目单频道：${matched:-0} 个；本次新增下载台标：${added:-0} 个。"
+    echo "当前 new-logo.m3u 可用台标：${found:-0} 个；本地台标库：${cnt:-0} 个文件。"
+    echo "已汇总源列表：/www/iptv/epg-icon-sources.txt"
+    echo "已汇总频道图标映射：/www/iptv/epg-icon-map.tsv"
+    echo "本地节目单： http://$lan:8080/new-logo.m3u"
+    echo "本地 EPG： http://$lan:8080/epg.xml.gz"
+    echo "自定义在线 EPG 源：编辑 $epg_icon_sources_file，每行一个 XMLTV 地址。" ;;
+  list_logos)
+    awk '/^#EXTINF/{
+      line=$0; name=line; sub(/^.*,/,"",name); logo="";
+      if(match(line,/tvg-logo="[^"]*"/)) logo=substr(line,RSTART+10,RLENGTH-11);
+      gsub(/\t/," ",name); print name "\t" logo
+    }' /www/new-logo.m3u 2>/dev/null ;;
+  upload_logo)
+    name=$(get name); ext=$(get ext)
+    [ -n "$name" ] || { echo "缺少频道名"; exit 0; }
+    case "$ext" in png|jpg|jpeg|webp|gif) ;; *) ext=png ;; esac
+    mkdir -p /www/iptv/logos
+    ensure_runtime
+    key=$(printf '%s' "$name" | md5sum | cut -c1-16)
+    len="${CONTENT_LENGTH:-0}"
+    [ "$len" -gt 0 ] 2>/dev/null || { echo "没有收到图片数据"; exit 0; }
+    tmpf="$trash_dir/uplogo.$$"
+    head -c "$len" > "$tmpf"
+    sz=$(wc -c < "$tmpf" 2>/dev/null | tr -d ' ')
+    if [ "${sz:-0}" -lt 64 ]; then rm -f "$tmpf"; echo "图片数据过小或无效（$sz 字节）"; exit 0; fi
+    out="/www/iptv/logos/$key.png"
+    if ! save_logo_png "$tmpf" "$out"; then
+      rm -f "$tmpf" "$out"
+      echo "上传失败：图片不是可处理格式，或当前路由器缺少转换工具。建议上传 PNG；CCTV 横版可用 600x270，通用方形可用 512x512 或 256x256。"
+      exit 0
+    fi
+    rm -f "$tmpf"
+    rm -f /www/iptv/logos/$key.svg /www/iptv/logos/$key.jpg /www/iptv/logos/$key.jpeg /www/iptv/logos/$key.webp /www/iptv/logos/$key.gif
+    clear_placeholder_logo "$out"
+    chmod 644 "$out" 2>/dev/null || true
+    lan="$(lan_ip)"
+    url="http://$lan:8080/iptv/logos/$key.png?v=$(date +%s)"
+    backup_playlist new-logo.m3u
+    awk -v target="$name" -v url="$url" '/^#EXTINF/{line=$0;nm=line;sub(/^.*,/,"",nm); if(nm==target){gsub(/[[:space:]]*tvg-logo="[^"]*"/,"",line); sub(/^#EXTINF:-1/,"#EXTINF:-1 tvg-logo=\"" url "\"",line)} print line; next}{print}' /www/new-logo.m3u > /www/new-logo.m3u.tmp.$$ && mv /www/new-logo.m3u.tmp.$$ /www/new-logo.m3u
+    log "已替换台标：$name（上传 $sz 字节，已保存为 PNG）"
+    echo "OK 已替换台标：$name（已保存为 PNG；CCTV 横版可用 600x270，通用方形可用 512x512 或 256x256，透明背景更佳）" ;;
+  delete_logo)
+    name=$(get name)
+    [ -n "$name" ] || { echo "缺少频道名"; exit 0; }
+    key=$(printf '%s' "$name" | md5sum | cut -c1-16)
+    rm -f /www/iptv/logos/$key.svg /www/iptv/logos/$key.png /www/iptv/logos/$key.jpg /www/iptv/logos/$key.jpeg /www/iptv/logos/$key.webp /www/iptv/logos/$key.gif /www/iptv/logos/$key.placeholder
+    backup_playlist new-logo.m3u
+    awk -v target="$name" '/^#EXTINF/{line=$0;nm=line;sub(/^.*,/,"",nm); if(nm==target) gsub(/[[:space:]]*tvg-logo="[^"]*"/,"",line); print line; next}{print}' /www/new-logo.m3u > /www/new-logo.m3u.tmp.$$ && mv /www/new-logo.m3u.tmp.$$ /www/new-logo.m3u
+    log "已删除台标：$name"; echo "已删除台标：$name" ;;
+  enrich_existing_logos)
+    log "开始为现有节目表匹配旁路由本地台标库..."
+    ensure_logo_helper
+    backup_playlist new-logo.m3u
+    ensure_runtime
+    [ -f /www/new-logo.m3u ] || decorate /www/new.m3u /www/new-logo.m3u ''
+    n1=$(enrich_playlist_logos /www/new-logo.m3u)
+    rm -f /www/cgi-bin/iptv-action-logo-helper
+    log "完成：新增/修正台标 $n1 个；本地库匹配不到的失效公网台标已清除。写入 /www/new-logo.m3u。"
+    echo "基础无台标节目单保持不变：/www/new.m3u"
+    playlist_counts ;;
+  remove_all_logos)
+    log "开始移除现有节目表所有台标..."
+    backup_playlist new.m3u
+    src=/www/new-logo.m3u
+    [ -f "$src" ] || src=/www/new.m3u
+    strip_m3u_logos_to "$src" /www/new.m3u
+    log "完成：已移除 tvg-logo，并保存到基础无台标节目单 /www/new.m3u。"
+    echo "带台标节目单保持不变：/www/new-logo.m3u"
+    playlist_counts ;;
+  add_logos_current)
+    file=$(get file)
+    case "$file" in new.m3u|new-logo.m3u|vsp.m3u) ;; *) echo "不支持的节目单：$file"; exit 0 ;; esac
+    [ -f "/www/$file" ] || { echo "文件不存在：/www/$file"; exit 0; }
+    backup_playlist "$file"
+    ensure_runtime
+    ensure_logo_helper
+    tmp="$trash_dir/$file.logo.$$"
+    decorate "/www/$file" "$tmp" ''
+    mv "$tmp" "/www/$file"
+    n1=$(enrich_playlist_logos "/www/$file")
+    rm -f /www/cgi-bin/iptv-action-logo-helper
+    log "已为当前节目单匹配本地台标库：新增/修正 $n1 个：/www/$file"
+    echo "当前节目数量：$(grep -c '^#EXTINF' /www/$file 2>/dev/null)" ;;
+  remove_logos_current)
+    file=$(get file)
+    case "$file" in new.m3u|new-logo.m3u|vsp.m3u) ;; *) echo "不支持的节目单：$file"; exit 0 ;; esac
+    [ -f "/www/$file" ] || { echo "文件不存在：/www/$file"; exit 0; }
+    backup_playlist "$file"
+    strip_m3u_logos "/www/$file"
+    log "已移除当前节目单所有台标：/www/$file"
+    echo "当前节目数量：$(grep -c '^#EXTINF' /www/$file 2>/dev/null)" ;;
+  capture_boot_config)
+    stb_passthrough_mode
+    iface=$(get_capture_iface)
+    repair_capture_bridge "$iface" >/dev/null 2>&1 || true
+    pkill -f 'iptv-boot-config' 2>/dev/null || true
+    rm -f "$boot_pcap" "$boot_control_pcap" "$boot_log" "$boot_strings" "$boot_read_err" "$boot_urls" "$boot_tsv" "$boot_addrs" "$boot_m3u" "$boot_txt"
+    link=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null)
+    log "请先关闭 IPTV 盒子，然后点击后 90 秒内开机并进入直播/频道列表。系统将抓取精简控制流量：TCP、DHCP、DNS、IGMP、ARP；默认排除 UDP 组播视频流，避免 pcap 过大。HTTPS 加密内容只能保存连接信息，不能直接解析明文。"
+    [ "$link" = "up" ] || echo "提示：$iface 当前状态是 ${link:-unknown}。如果盒子关机/重启中，这是正常的；透传规则已预置，请现在给盒子上电。"
+    ( tcpdump -i "$iface" -s 4096 -w "$boot_pcap" "$boot_filter" >"$boot_log" 2>&1 & echo $! >"$boot_pid" ) &
+    echo "抓包已启动：$iface，保存到 $boot_pcap。请现在打开 IPTV 盒子电源，并等待主页/直播页加载完成。"
+    echo "当前过滤器：$boot_filter"
+    echo "说明：如果仍然抓不到节目单，通常是运营商走 HTTPS/私有加密，或盒子未在抓包期间进入直播/频道列表。"
+    echo "数据目录：$runtime_dir"
+    echo "可清理数据目录：$trash_dir"
+    echo "说明文件：$readme_file" ;;
+  stop_boot_config)
+    [ -s "$boot_pid" ] && kill "$(cat "$boot_pid")" 2>/dev/null || true
+    rm -f "$boot_pid"
+    log "开机配置抓包已停止。"
+    ls -lh "$boot_pcap" 2>/dev/null
+    echo "下载路径：/cgi-bin/iptv-action?action=download_boot_capture" ;;
+  slim_boot_capture)
+    log "开始瘦身当前开机抓包：只保留控制流量，去除 UDP 组播视频..."
+    [ -s "$boot_pcap" ] || { echo "没有找到原始抓包文件：$boot_pcap"; exit 0; }
+    before=$(ls -lh "$boot_pcap" 2>/dev/null | awk '{print $5}')
+    rm -f "$boot_control_pcap"
+    if tcpdump -r "$boot_pcap" -s 4096 -w "$boot_control_pcap" "$boot_filter" >"$boot_read_err" 2>&1; then
+      after=$(ls -lh "$boot_control_pcap" 2>/dev/null | awk '{print $5}')
+      mv "$boot_control_pcap" "$boot_pcap"
+      echo "瘦身完成。"
+      echo "瘦身前：${before:-未知}"
+      echo "瘦身后：${after:-未知}"
+      echo "使用过滤器：$boot_filter"
+      echo "已覆盖为精简包：$boot_pcap"
+    else
+      echo "瘦身失败："
+      cat "$boot_read_err" 2>/dev/null
+    fi ;;
+  runtime_readme)
+    cat "$readme_file" ;;
+  download_boot_capture)
+    printf 'Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename="iptv-boot-config.pcap"\r\n\r\n'
+    cat "$boot_pcap" 2>/dev/null
+    exit 0 ;;
+  analyze_boot_config)
+    log "分析开机抓包中的明文节目单/组播地址..."
+    [ -s "$boot_pcap" ] || { echo "未找到开机抓包文件 $boot_pcap。请先点击“开始抓开机配置”，再给 IPTV 盒子上电，最后停止抓包。"; exit 0; }
+    if tcpdump -A -nn -r "$boot_pcap" 2>"$boot_read_err" | grep -aEi 'GET |POST |HTTP/|Host:|Cookie:|Set-Cookie:|JSESSIONID|Referer:|Origin:|https?://|rtp://|udp://|(^|[^0-9])((22[4-9]|23[0-9])\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+)|#EXTINF|tvg-logo|channel|program|service|name|logo|icon|m3u|xml|epg|jsp|json|HWCTC|Category|Authentication|ServicesEntry|getchannel|playlist|playurl|QueryAllChannel|PlayChannel|OnLineHeartbeat|userFilter|channelVersion' >"$boot_strings"; then
+      :
+    else
+      cat "$boot_pcap" 2>/dev/null | tr '\r' '\n' | grep -aEi 'GET |POST |HTTP/|Host:|Cookie:|Set-Cookie:|JSESSIONID|Referer:|Origin:|https?://|rtp://|udp://|(^|[^0-9])((22[4-9]|23[0-9])\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+)|#EXTINF|tvg-logo|channel|program|service|name|logo|icon|m3u|xml|epg|jsp|json|HWCTC|Category|Authentication|ServicesEntry|getchannel|playlist|playurl|QueryAllChannel|PlayChannel|OnLineHeartbeat|userFilter|channelVersion' >"$boot_strings" 2>/dev/null || true
+    fi
+    grep -aEo 'https?://[^[:space:]"<>]+' "$boot_strings" 2>/dev/null | sort -u >"$boot_urls"
+    awk '
+      function clean_name(s) {
+        gsub(/\r/,"",s)
+        gsub(/^[[:space:]]+|[[:space:]]+$/,"",s)
+        gsub(/["<>]/,"",s)
+        if (s ~ /^#EXTINF/) s=""
+        return s
+      }
+      function emit(line, name, logo, proto, addr, raw) {
+        raw=line
+        while (match(raw, /(rtp|udp):\/\/@?[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+/)) {
+          proto=substr(raw,RSTART,3)
+          addr=substr(raw,RSTART,RLENGTH)
+          sub(/^(rtp|udp):\/\/@?/,"",addr)
+          print addr "|" (name ? name : "") "|" proto "|" logo
+          raw=substr(raw,RSTART+RLENGTH)
+        }
+        raw=line
+        while (match(raw, /(22[4-9]|23[0-9])\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+/)) {
+          addr=substr(raw,RSTART,RLENGTH)
+          print addr "|" (name ? name : "") "|rtp|" logo
+          raw=substr(raw,RSTART+RLENGTH)
+        }
+      }
+      /#EXTINF/ {
+        last=$0
+        name=""
+        if (match(last,/tvg-name="[^"]+"/)) {
+          name=substr(last,RSTART+10,RLENGTH-11)
+        } else if (index(last,",") > 0) {
+          name=last
+          sub(/^.*,/,"",name)
+        }
+        last_name=clean_name(name)
+        if (match(last,/tvg-logo="[^"]+"/)) {
+          last_logo=substr(last,RSTART+10,RLENGTH-11)
+        }
+        next
+      }
+      /"name"[[:space:]]*:/ || /channelName/ || /programName/ || /serviceName/ {
+        line=$0
+        if (match(line,/"(name|channelName|programName|serviceName)"[[:space:]]*:[[:space:]]*"[^"]+"/)) {
+          v=substr(line,RSTART,RLENGTH)
+          sub(/^"[^"]+"[[:space:]]*:[[:space:]]*"/,"",v)
+          sub(/"$/,"",v)
+          last_name=clean_name(v)
+        }
+      }
+      /tvg-logo=|logo|Logo|icon|Icon/ {
+        if (match($0,/https?:\/\/[^[:space:]"<>]+[.](png|jpg|jpeg|webp)([?][^[:space:]"<>]*)?/)) {
+          last_logo=substr($0,RSTART,RLENGTH)
+        }
+      }
+      {
+        emit($0,last_name,last_logo)
+      }
+    ' "$boot_strings" | awk -F'|' '
+      $1 ~ /^(22[4-9]|23[0-9])\./ && !seen[$1]++ {
+        name=$2
+        if (name == "") name="开机抓取-" NR
+        print $1 "|" name "|" ($3 ? $3 : "rtp") "|" $4
+      }
+    ' >"$boot_tsv"
+    cut -d'|' -f1 "$boot_tsv" | sort -u >"$boot_addrs"
+    c=$(wc -l <"$boot_addrs" 2>/dev/null | tr -d ' ')
+    {
+      echo '#EXTM3U'
+      awk -F'|' -v base="$(udpxy_base)" '
+        {
+          addr=$1; name=$2; proto=$3; logo=$4
+          if (name == "") name="开机抓取-" NR
+          id=name
+          gsub(/[[:space:]-]/,"",id)
+          line="#EXTINF:-1 tvg-id=\"" id "\" tvg-name=\"" name "\""
+          if (logo != "") line=line " tvg-logo=\"" logo "\""
+          print line "," name
+          print base "/" (proto ? proto : "rtp") "/" addr
+        }
+      ' "$boot_tsv"
+    } >"$boot_m3u"
+    awk -F'|' -v base="$(udpxy_base)" '{name=$2;if(name=="")name="开机抓取-"NR; print name "," base "/" ($3?$3:"rtp") "/" $1}' "$boot_tsv" >"$boot_txt"
+    echo "识别到候选组播地址：${c:-0}"
+    echo
+    echo "候选节目单："
+    awk -F'|' '{printf "%s | %s | %s | %s\n",$1,$2,$3,$4}' "$boot_tsv"
+    echo
+    echo "已生成候选文件："
+    echo "$boot_m3u"
+    echo "$boot_txt"
+    echo "$boot_urls"
+    echo
+    echo "分析说明：优先从明文 M3U/XML/JSON/HTTP 响应里提取频道名、组播地址和台标；若运营商开机数据走 HTTPS 加密，只能看到域名/IP，无法直接还原完整节目单。"
+    echo "确认无误后可执行“一键并入开机抓取节目单”。" ;;
+  diagnose_boot_capture)
+    log "诊断开机抓包文件..."
+    iface=$(cat /etc/iptv-capture-iface 2>/dev/null || echo eth2)
+    link=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null)
+    echo "数据目录：$runtime_dir"
+    echo "抓包口：$iface / ${link:-unknown}"
+    echo
+    echo "文件结构："
+    ls -lh "$runtime_dir" 2>/dev/null || true
+    echo
+    echo "可清理目录内容："
+    ls -lh "$trash_dir" 2>/dev/null || true
+    echo
+    [ -s "$boot_pcap" ] || { echo "没有抓包文件：$boot_pcap"; echo "最常见原因：抓包口未 UP、盒子没从此口经过、抓包启动后没有给盒子断电重启。"; exit 0; }
+    summary=$trash_dir/boot-summary.txt
+    tcpdump -nn -tttt -r "$boot_pcap" > "$summary" 2>"$boot_read_err" || true
+    total=$(wc -l < "$summary" 2>/dev/null | tr -d ' ')
+    dhcp=$(grep -Eci 'BOOTP|DHCP|[.]67:|[.]68:' "$summary" 2>/dev/null)
+    dns=$(grep -Eci '[.]53:|: 53 | A[?]| AAAA[?]| PTR[?]' "$summary" 2>/dev/null)
+    http=$(grep -Eci '[.]80:|[.]8080:|[.]8081:|[.]8888:|[.]9000:' "$summary" 2>/dev/null)
+    https=$(grep -Eci '[.]443:' "$summary" 2>/dev/null)
+    igmp=$(grep -Eci 'igmp' "$summary" 2>/dev/null)
+    multicast=$(grep -Eci ' > (22[4-9]|23[0-9])\\.' "$summary" 2>/dev/null)
+    echo "包数量：${total:-0}"
+    echo "DHCP/BOOTP 相关：${dhcp:-0}"
+    echo "DNS 相关：${dns:-0}"
+    echo "HTTP 明文端口相关：${http:-0}"
+    echo "HTTPS/TLS 443 相关：${https:-0}"
+    echo "IGMP 相关：${igmp:-0}"
+    echo "组播目的地址相关：${multicast:-0}"
+    echo
+    echo "前 40 行抓包摘要："
+    sed -n '1,40p' "$summary"
+    echo
+    echo "DNS/域名请求样例："
+    grep -E ' A[?]| AAAA[?]| PTR[?]' "$summary" 2>/dev/null | sed -n '1,20p'
+    echo
+    if [ "${total:-0}" = "0" ]; then
+      echo "结论：pcap 里没有可读包。优先检查 USB 盒子侧网口是否 UP，或盒子流量是否真的经过旁路由。"
+    elif [ "${dhcp:-0}" = "0" ] && [ "${dns:-0}" = "0" ] && [ "${http:-0}" = "0" ] && [ "${https:-0}" = "0" ]; then
+      echo "结论：没有看到盒子开机联网流量，可能抓错网口、盒子未重启，或盒子没有通过该链路联网。"
+    elif [ "${http:-0}" = "0" ] && [ "${https:-0}" -gt 0 ]; then
+      echo "结论：看到了 HTTPS/TLS，但没有 HTTP 明文。运营商可能加密了开机配置，无法直接解析节目单，只能分析域名/IP 或改用组播抓取/盲扫。"
+    elif [ "${http:-0}" -gt 0 ]; then
+      echo "结论：存在 HTTP 明文流量，可继续执行“自动分析开机数据”。若仍没有频道，说明明文中没有 239.x/rtp/udp 格式节目单，可能需要进入直播页面后重新抓。"
+    else
+      echo "结论：有基础流量，但未识别到节目单特征。建议按页面流程重新抓一次完整开机到进入直播页面的过程。"
+    fi ;;
+  merge_boot_playlist)
+    [ -s "$boot_tsv" ] || { echo "没有可并入的开机抓取结果，请先分析。"; exit 0; }
+    backup_playlist new.m3u
+    backup_playlist new-logo.m3u
+    added=0; existed=0
+    logo_updates=$trash_dir/boot-logo-updates.$$
+    : > "$logo_updates"
+    while IFS='|' read -r addr name proto logo; do
+      [ -n "$addr" ] || continue
+      [ -n "$proto" ] || proto=rtp
+      if playlist_has_addr "$addr"; then
+        existed=$((existed+1))
+        update_playlist_metadata "$addr" "$name" "" >/dev/null 2>&1 || true
+      else
+        append_captured_channel "$addr" "$proto" "$name" ""
+        added=$((added+1))
+      fi
+      [ -n "$logo" ] && echo "$addr|$logo" >> "$logo_updates"
+    done <"$boot_tsv"
+    strip_m3u_logos /www/new.m3u
+    rebuild_new_logo
+    while IFS='|' read -r addr logo; do
+      update_logo_metadata "$addr" "$logo" >/dev/null 2>&1 || true
+    done < "$logo_updates"
+    rm -f "$logo_updates"
+    log "完成：开机抓取并入新增 $added 个，已存在 $existed 个。" ;;
+  fetch_vsp_playlist)
+    if [ -s "$vsp_worker_pid" ] && kill -0 "$(cat "$vsp_worker_pid")" 2>/dev/null; then
+      echo "VSP 后台获取正在运行，当前进度："
+      cat "$vsp_progress" 2>/dev/null
+      exit 0
+    fi
+    {
+      echo "阶段：后台任务启动中"
+      echo "状态：正在启动 VSP 获取任务"
+      echo "说明：任务会在后台继续运行，页面右侧会每 2 秒刷新进度。"
+    } > "$vsp_progress"
+    : > "$vsp_worker_out"
+    auth_user=$(get auth_user)
+    auth_pass=$(get auth_pass)
+    (
+      QUERY_STRING="action=vsp_worker&auth_user=$auth_user&auth_pass=$auth_pass" /www/cgi-bin/iptv-action > "$vsp_worker_out" 2>&1
+      rm -f "$vsp_worker_pid"
+    ) </dev/null >/dev/null 2>&1 &
+    echo $! > "$vsp_worker_pid"
+    echo "VSP 后台获取已启动。"
+    echo "进度会显示在右侧状态栏；完成后会写入 /www/vsp.m3u、/www/vsp.tsv。"
+    echo "后台日志：$vsp_worker_out" ;;
+  vsp_worker)
+    log "开始通过 IPTV 盒子 VSP 接口获取完整频道表..."
+    {
+      echo "阶段：准备 VSP 会话"
+      echo "状态：正在检查开机包分析结果"
+      echo "提示：如果长时间停在这里，通常是缺少 JSESSIONID 或开机包不完整。"
+    } > "$vsp_progress"
+    if [ ! -s "$boot_strings" ]; then
+      {
+        echo "阶段：VSP 获取失败"
+        echo "状态：缺少开机包分析文本"
+        echo "缺少文件：$boot_strings"
+        echo "处理方式：先执行“分析开机包”，或者重新抓一次盒子开机到进入直播页的过程。"
+      } > "$vsp_progress"
+      echo "缺少开机数据文本：$boot_strings"
+      echo "请先执行“自动分析开机数据”，或重新抓一次盒子开机到进入直播页的过程。"
+      exit 0
+    fi
+    if ! fetch_vsp_all_channel; then
+      {
+        echo "阶段：VSP 获取失败"
+        echo "状态：无法获取 QueryAllChannel 完整频道表"
+        echo "host=${vsp_host:-未识别}"
+        echo "userFilter=${vsp_user_filter:-未识别}"
+        echo "cookie=${vsp_cookie:+已识别}"
+      } > "$vsp_progress"
+      echo "VSP 完整频道表获取失败。"
+      echo "host=${vsp_host:-未识别}"
+      echo "userFilter=${vsp_user_filter:-未识别}"
+      echo "cookie=${vsp_cookie:+已识别}"
+      echo "常见原因：JSESSIONID 已过期、盒子开机抓包不完整，或未进入直播/频道列表。请重新开机抓包后立刻执行本功能。"
+      exit 0
+    fi
+    total=$(jsonfilter -i "$vsp_channel_decoded" -e '@.total' 2>/dev/null)
+    case "$total" in ''|*[!0-9]*) total=$(jsonfilter -i "$vsp_channel_decoded" -e '@.channelDetails[*].ID' 2>/dev/null | wc -l | tr -d ' ') ;; esac
+    [ -n "$total" ] || total=0
+    {
+      echo "阶段：已获取频道清单，开始逐个换取播放地址"
+      echo "频道总数：$total"
+      echo "当前进度：0/$total"
+      echo "成功：0"
+      echo "失败：0"
+      echo "跳过：0"
+    } > "$vsp_progress"
+    : > "$vsp_playlist_tsv"
+    : > "$vsp_play_log"
+    i=0; ok=0; fail=0; skipped=0
+    while [ "$i" -lt "$total" ] 2>/dev/null; do
+      id=$(jsonfilter -i "$vsp_channel_decoded" -e "@.channelDetails[$i].ID" 2>/dev/null)
+      name=$(jsonfilter -i "$vsp_channel_decoded" -e "@.channelDetails[$i].name" 2>/dev/null)
+      no=$(jsonfilter -i "$vsp_channel_decoded" -e "@.channelDetails[$i].channelNO" 2>/dev/null)
+      media=$(jsonfilter -i "$vsp_channel_decoded" -e "@.channelDetails[$i].physicalChannels[0].ID" 2>/dev/null)
+      logo=$(jsonfilter -i "$vsp_channel_decoded" -e "@.channelDetails[$i].picture.icons[0]" 2>/dev/null)
+      [ -n "$name" ] || name="VSP频道-$id"
+      {
+        echo "阶段：逐个换取播放地址"
+        echo "频道总数：$total"
+        echo "当前进度：$((i+1))/$total"
+        echo "当前频道：${no:+$no }$name"
+        echo "成功：$ok"
+        echo "失败：$fail"
+        echo "跳过：$skipped"
+        echo "提示：这里会逐个调用 PlayChannel，频道多时会比较慢。"
+      } > "$vsp_progress"
+      [ -n "$id" ] && [ -n "$media" ] || { skipped=$((skipped+1)); i=$((i+1)); continue; }
+      resp=$(play_response_for_channel "$id" "$media")
+      play=$(printf '%s' "$resp" | sed -n 's/.*"playURL":"\([^"]*\)".*/\1/p' | sed 's#\\/#/#g' | head -1)
+      addr=$(printf '%s' "$play" | sed 's#^igmp://##;s#^rtp://##;s#^udp://##')
+      proto=rtp
+      echo "$play" | grep -q '^udp://' && proto=udp
+      if echo "$addr" | grep -Eq '^(22[4-9]|23[0-9])\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+'; then
+        printf '%s|%s|%s|%s|%s|%s|%s\n' "$(sanitize_tsv_field "$no")" "$(sanitize_tsv_field "$name")" "$(sanitize_tsv_field "$id")" "$(sanitize_tsv_field "$media")" "$addr" "$proto" "$(sanitize_tsv_field "$logo")" >> "$vsp_playlist_tsv"
+        ok=$((ok+1))
+      else
+        err=$(printf '%s' "$resp" | sed -n 's/.*"retCode":"\([^"]*\)".*"retMsg":"\([^"]*\)".*/\1 \2/p' | head -1)
+        [ -n "$err" ] || err=$(printf '%s' "$resp" | cut -c1-180)
+        [ -n "$err" ] || err="EMPTY_RESPONSE_OR_TIMEOUT_OR_NO_PLAYURL"
+        printf '%s|%s|%s|%s|FAIL|%s\n' "$(sanitize_tsv_field "$no")" "$(sanitize_tsv_field "$name")" "$(sanitize_tsv_field "$id")" "$(sanitize_tsv_field "$media")" "$(sanitize_tsv_field "$err")" >> "$vsp_play_log"
+        fail=$((fail+1))
+      fi
+      {
+        echo "阶段：逐个换取播放地址"
+        echo "频道总数：$total"
+        echo "当前进度：$((i+1))/$total"
+        echo "当前频道：${no:+$no }$name"
+        echo "成功：$ok"
+        echo "失败：$fail"
+        echo "跳过：$skipped"
+        [ -n "$addr" ] && echo "最近地址：$addr"
+      } > "$vsp_progress"
+      i=$((i+1))
+    done
+    {
+      echo "阶段：生成 VSP 候选节目单文件"
+      echo "频道总数：$total"
+      echo "当前进度：$total/$total"
+      echo "成功：$ok"
+      echo "失败：$fail"
+      echo "跳过：$skipped"
+      echo "状态：正在写入 /www/vsp.m3u、/www/vsp.tsv"
+    } > "$vsp_progress"
+    {
+      echo '#EXTM3U'
+      awk -F'|' -v base="$(udpxy_base)" '
+        {
+          no=$1; name=$2; id=$3; addr=$5; proto=$6; logo=$7
+          line="#EXTINF:-1 tvg-id=\"" id "\" tvg-name=\"" name "\""
+          if (no != "") line=line " tvg-chno=\"" no "\""
+          if (logo != "") line=line " tvg-logo=\"" logo "\""
+          print line "," name
+          print base "/" (proto == "udp" ? "udp" : "rtp") "/" addr
+        }
+      ' "$vsp_playlist_tsv"
+    } > "$vsp_playlist_m3u"
+    awk -F'|' -v base="$(udpxy_base)" '{print $2 "," base "/" ($6 == "udp" ? "udp" : "rtp") "/" $5}' "$vsp_playlist_tsv" > "$vsp_playlist_txt"
+    cp "$vsp_playlist_tsv" "$vsp_www_tsv"
+    {
+      echo '#EXTM3U'
+      awk -F'|' -v base="$(udpxy_base)" '
+        {
+          no=$1; name=$2; id=$3; addr=$5; proto=$6
+          line="#EXTINF:-1 tvg-id=\"" id "\" tvg-name=\"" name "\""
+          if (no != "") line=line " tvg-chno=\"" no "\""
+          print line "," name
+          print base "/" (proto == "udp" ? "udp" : "rtp") "/" addr
+        }
+      ' "$vsp_playlist_tsv"
+    } > "$vsp_www_m3u"
+    rm -f "$vsp_www_logo_m3u"
+    log "VSP 完整频道表生成完成。"
+    {
+      echo "阶段：完成"
+      echo "频道总数：$total"
+      echo "成功生成播放地址：$ok"
+      echo "失败：$fail"
+      echo "跳过无媒体 ID：$skipped"
+      echo "已保存：$vsp_www_m3u"
+      echo "已保存：$vsp_www_tsv"
+      [ -s "$vsp_www_m3u" ] && echo "VSP节目单条数：$(grep -c '^#EXTINF' "$vsp_www_m3u" 2>/dev/null)"
+      [ -s "$vsp_play_log" ] && echo "失败明细：$vsp_play_log"
+      echo "正式节目单未修改。确认后到节目表编辑区点击“按规则合并”。"
+    } > "$vsp_progress"
+    echo "VSP 返回频道总数：$total"
+    echo "成功生成播放地址：$ok"
+    echo "失败：$fail"
+    echo "跳过无媒体 ID：$skipped"
+    echo "候选节目单：$vsp_playlist_m3u"
+    echo "候选频道表：$vsp_playlist_tsv"
+    echo "已单独保存基础 VSP 节目单：$vsp_www_m3u"
+    echo "已单独保存结构化 VSP 清单：$vsp_www_tsv"
+    echo "正式节目单未修改：/www/new.m3u、/www/new-logo.m3u"
+    echo "失败日志：$vsp_play_log"
+    echo
+    echo "前 40 个候选频道："
+    awk -F'|' '{printf "%s | %s | %s | %s\n",$1,$2,$5,$7}' "$vsp_playlist_tsv" | sed -n '1,40p'
+    echo
+    echo "确认频道数量和名称正常后，再点击“并入 VSP 完整节目单”。" ;;
+  vsp_status)
+    if [ -s "$vsp_progress" ]; then
+      cat "$vsp_progress"
+      if [ -s "$vsp_www_m3u" ]; then
+        echo
+        echo "当前 VSP 候选节目单：$vsp_www_m3u"
+        echo "当前 VSP 频道条数：$(grep -c '^#EXTINF' "$vsp_www_m3u" 2>/dev/null)"
+      fi
+      if [ -s "$vsp_play_log" ]; then
+        echo
+        echo "最近失败频道（最多 10 条）："
+        awk -F'|' '{print "- " $2 "：" $6}' "$vsp_play_log" | sed -n '1,10p'
+      fi
+      if [ -s "$vsp_worker_pid" ]; then
+        if kill -0 "$(cat "$vsp_worker_pid")" 2>/dev/null; then
+          echo
+          echo "后台任务：运行中 PID $(cat "$vsp_worker_pid")"
+        else
+          echo
+          echo "后台任务：已退出但未清理 PID，可能异常中断。后台日志尾部："
+          tail -20 "$vsp_worker_out" 2>/dev/null
+        fi
+      fi
+    else
+      echo "VSP 当前没有运行进度。点击“VSP获取并单独保存”后，这里会显示频道总数、当前进度、成功/失败数量。"
+    fi ;;
+  merge_vsp_playlist)
+    vsp_merge_src="$vsp_www_tsv"
+    [ -s "$vsp_merge_src" ] || vsp_merge_src="$vsp_playlist_tsv"
+    [ -s "$vsp_merge_src" ] || { echo "没有 VSP 候选节目单：$vsp_www_tsv 或 $vsp_playlist_tsv"; echo "请先执行“VSP获取完整节目单”。"; exit 0; }
+    backup_playlist new.m3u
+    backup_playlist new-logo.m3u
+    log "按规则直接合并 VSP 候选源：不在合并阶段测试 12123 连通性。失效源请使用“可选删除失效源”单独验证。"
+    : > "$vsp_valid_tsv"
+    ok=0
+    while IFS='|' read -r no name id media addr proto logo; do
+      [ -n "$addr" ] || continue
+      [ -n "$proto" ] || proto=rtp
+      url=$(vsp_addr_to_http "$proto" "$addr")
+      status=SKIP
+      ok=$((ok+1))
+      printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$status" "$(sanitize_tsv_field "$no")" "$(sanitize_tsv_field "$name")" "$(sanitize_tsv_field "$id")" "$(sanitize_tsv_field "$media")" "$addr" "$proto" "$(sanitize_tsv_field "$logo")" "$url" >> "$vsp_valid_tsv"
+    done < "$vsp_merge_src"
+    echo "VSP 候选源：直接参与合并 $ok 个。"
+    [ "$ok" -gt 0 ] || { echo "没有可用 VSP 候选源，已停止合并。结果见：$vsp_valid_tsv"; exit 0; }
+    existing_tsv=$trash_dir/existing-playlist.tsv
+    merged_tsv=$trash_dir/merged-playlist.tsv
+    build_existing_playlist_tsv > "$existing_tsv"
+    awk -F'|' '
+      function clean(s){ gsub(/^[[:space:]]+|[[:space:]]+$/,"",s); return s }
+      function stripline(s){ gsub(/[[:space:]]*线路[[:space:]]*[0-9]+[[:space:]]*$/,"",s); return s }
+      function norm(s){ s=stripline(clean(s)); gsub(/[[:space:]]/,"",s); gsub(/（.*）|\(.*\)/,"",s); gsub(/高清|超清|标清|HD|频道/,"",s); gsub(/线路[0-9]+$/,"",s); return s }
+      function is4k(s){ return s ~ /(4K|4k|超高清|UHD)/ }
+      function iscctv(s){ return s ~ /^(CCTV|cctv|央视|中央)[- ]*[0-9]/ || s ~ /^(CCTV|cctv)[- ]*[0-9]/ }
+      function ishotstv(s){ return s ~ /(湖南|浙江|江苏|东方|北京|广东|深圳|山东|安徽|湖北|四川|重庆|河南|河北|辽宁|天津|福建|江西|贵州|云南|广西|陕西|黑龙江|吉林)卫视/ }
+      function issat(s){ return s ~ /卫视/ }
+      function isforeign(s){ return s ~ /(CGTN|NHK|BBC|CNN|CNBC|半岛|法兰西|新加坡|欧洲|美国|亚洲|国际|英语|阿拉伯|俄罗斯|韩国|日本|WORLD|Macau|澳门)/ }
+      function cctvno(s,t){
+        t=toupper(s)
+        gsub(/^.*CCTV[- ]*/,"",t)
+        if (t ~ /^5[+＋]/) return 5.5
+        gsub(/[^0-9].*$/,"",t)
+        if (t ~ /^[0-9]+$/) return t+0
+        return 999
+      }
+      function cctvquality(s){
+        if (s ~ /(高清|HD|超清|超高清|4K|4k|UHD)/) return 0
+        if (s ~ /(LD|标清)/) return 2
+        return 1
+      }
+      function entrypri(s,src){
+        if (is4k(s)) return 1
+        if (iscctv(s)) return 2
+        if (ishotstv(s)) return 3
+        if (issat(s)) return 4
+        if (src == "VSP" && isforeign(s)) return 7
+        if (src == "VSP") return 5
+        if (isforeign(s)) return 7
+        return 6
+      }
+      function vsppri(s){
+        return entrypri(s,"VSP")
+      }
+      function orderkey(s,src,n,seq,pri,base){
+        pri=entrypri(s,src)
+        base=(n in rank)?rank[n]:(100000+seq)
+        if (pri == 2) return int(cctvno(s)*10) + cctvquality(s)
+        return base
+      }
+      FNR==1 { pass++ }
+      pass==1 {
+        name=clean($1); n=norm(name)
+        if (n != "" && !(n in rank)) rank[n]=FNR
+        next
+      }
+      pass==2 && ($1=="OK" || $1=="SKIP") {
+        seq++
+        name=clean($3); url=$9; logo=$8; key=url
+        if (url != "" && !seen_url[key]++) {
+          n=norm(name)
+          name=stripline(name)
+          printf "%02d|%06d|%d|0|%06d|%06d|%s|%s|%s|VSP|%s\n", vsppri(name), orderkey(name,"VSP",n,seq), cctvquality(name), ((n in rank)?rank[n]:(100000+seq)), seq, name, url, logo, n
+        }
+        next
+      }
+      pass==3 {
+        seq++
+        name=clean($1); url=$2; key=url
+        if (url != "" && !seen_url[key]++) {
+          n=norm(name)
+          name=stripline(name)
+          printf "%02d|%06d|%d|1|%06d|%06d|%s|%s||EXISTING|%s\n", entrypri(name,"EXISTING"), orderkey(name,"EXISTING",n,seq), cctvquality(name), FNR, seq, name, url, n
+        }
+      }
+    ' "$existing_tsv" "$vsp_valid_tsv" "$existing_tsv" | sort -t'|' -k1,1 -k2,2 -k3,3 -k4,4 -k5,5 -k6,6 > "$merged_tsv"
+    {
+      echo '#EXTM3U'
+      awk -F'|' '
+        function stripline(s){ gsub(/[[:space:]]*线路[[:space:]]*[0-9]+[[:space:]]*$/,"",s); return s }
+        function labelbase(s){ s=stripline(s); gsub(/[[:space:]]*(高清|超清|标清|HD|LD)[[:space:]]*$/,"",s); return s }
+        NR==FNR {
+          nkey=$11; url=$8; name=$7
+          if (seen_pair[nkey "|" url]++) next
+          if (!(nkey in base_name)) base_name[nkey]=labelbase(name)
+          total[nkey]++
+          next
+        }
+        {
+          pri=$1; corder=$2; quality=$3; source_order=$4; order=$5; seq=$6; name=$7; url=$8; logo=$9; source=$10; nkey=$11
+          if (emitted[nkey]++) next
+          display=name
+          if (total[nkey] > 1) display=base_name[nkey]
+          id=display
+          gsub(/[[:space:]-]/,"",id)
+          line="#EXTINF:-1 tvg-id=\"" id "\" tvg-name=\"" display "\""
+          print line "," display
+          print url
+        }
+      ' "$merged_tsv" "$merged_tsv"
+    } > /www/new.m3u
+    {
+      echo '#EXTM3U'
+      awk -F'|' '
+        function stripline(s){ gsub(/[[:space:]]*线路[[:space:]]*[0-9]+[[:space:]]*$/,"",s); return s }
+        function labelbase(s){ s=stripline(s); gsub(/[[:space:]]*(高清|超清|标清|HD|LD)[[:space:]]*$/,"",s); return s }
+        NR==FNR {
+          nkey=$11; url=$8; name=$7
+          if (seen_pair[nkey "|" url]++) next
+          if (!(nkey in base_name)) base_name[nkey]=labelbase(name)
+          total[nkey]++
+          next
+        }
+        {
+          pri=$1; corder=$2; quality=$3; source_order=$4; order=$5; seq=$6; name=$7; url=$8; logo=$9; source=$10; nkey=$11
+          if (emitted[nkey]++) next
+          display=name
+          if (total[nkey] > 1) display=base_name[nkey]
+          id=display
+          gsub(/[[:space:]-]/,"",id)
+          if (logo == "") {
+            logo="https://live.fanmingming.com/tv/" id ".png"
+          }
+          line="#EXTINF:-1 tvg-id=\"" id "\" tvg-name=\"" display "\" tvg-logo=\"" logo "\""
+          print line "," display
+          print url
+        }
+      ' "$merged_tsv" "$merged_tsv"
+    } > /www/new-logo.m3u
+    awk -F'|' '{print $7 "," $8}' "$merged_tsv" > /www/new.txt
+    ensure_logo_helper
+    nlogo=$(enrich_playlist_logos /www/new-logo.m3u)
+    rm -f /www/cgi-bin/iptv-action-logo-helper
+    log "完成：已按规则重排并写入节目单。"
+    echo "台标：已用旁路由本地台标库匹配/修正 $nlogo 个（4K/超高清/高清/线路N 等后缀已自动归一化识别，本地无图的失效公网台标已清除）。"
+    echo "排序规则：4K/超高清 -> CCTV-1 到 CCTV-N -> 热门省级卫视 -> 地方卫视 -> VSP 其他频道 -> 原节目单剩余频道 -> 国外频道；默认节目单每个频道只保留最佳一路，避免 Emby/播放器显示重复频道。"
+    echo "VSP 合并明细：$vsp_valid_tsv"
+    echo "基础无台标节目单：/www/new.m3u"
+    echo "带台标节目单：/www/new-logo.m3u"
+    playlist_counts ;;
+  blind_scan)
+    base=$(get base); start=$(get start); end=$(get end); port=$(get port)
+    [ -n "$base" ] || base='239.254.10'
+    [ -n "$start" ] || start=1; [ -n "$end" ] || end=255; [ -n "$port" ] || port=5000
+    log "开始组播盲扫：$base.$start-$end:$port。风险：盲扫会产生大量探测流量，可能被运营商侧限制；建议只在抓不到包时小范围使用。"
+    : >"$blindscan_txt"
+    i="$start"
+    while [ "$i" -le "$end" ] 2>/dev/null; do
+      echo "$base.$i:$port" >>"$blindscan_txt"
+      i=$((i+1))
+    done
+    echo "已生成候选列表 $blindscan_txt。真实有效性仍需播放器/后续检测确认。" ;;
+  validate_channels)
+    gen=$(( $(cat "$trash_dir/validate.gen" 2>/dev/null || echo 0) + 1 ))
+    echo "$gen" > "$trash_dir/validate.gen"
+    {
+      echo "阶段：准备检测"
+      echo "状态：正在启动后台检测任务"
+    } > "$validate_progress"
+    : > "$validate_worker_out"
+    auth_user=$(get auth_user)
+    auth_pass=$(get auth_pass)
+    (
+      QUERY_STRING="action=validate_worker&auth_user=$auth_user&auth_pass=$auth_pass&gen=$gen" /www/cgi-bin/iptv-action > "$validate_worker_out" 2>&1
+    ) </dev/null >/dev/null 2>&1 &
+    echo "频道有效性后台检测已启动（再次点击会自动取代上一次，进度单调递增）。" ;;
+  validate_worker)
+    mygen=$(get gen)
+    genfile="$trash_dir/validate.gen"
+    log "开始检测现有节目单 URL 可访问性（并发）..."
+    awk '/^#EXTINF/{name=$0;sub(/^.*,/,"",name);next} /^http/{print name "|" $0}' /www/new.m3u 2>/dev/null >$channel_candidates
+    : >$invalid_channels
+    total_all=$(wc -l < "$channel_candidates" 2>/dev/null | tr -d ' ')
+    can_probe=0
+    if pgrep -af 'udpxy|msd_lite' >/dev/null 2>&1 && netstat -lnt 2>/dev/null | grep -q ':12123 '; then
+      can_probe=1
+    fi
+    work="$trash_dir/valwork.$$"; rm -rf "$work"; mkdir -p "$work"
+    i=0
+    while IFS='|' read -r name url; do
+      i=$((i+1))
+      (
+        if echo "$url" | grep -q ':12123/' && [ "$can_probe" = 0 ]; then printf 'SKIP\n' > "$work/$i"
+        elif stream_url_has_data "$url"; then printf 'OK\n' > "$work/$i"
+        else printf 'BAD\t%s|%s\n' "$name" "$url" > "$work/$i"; fi
+      ) &
+      if [ $((i % 8)) -eq 0 ]; then
+        wait
+        [ "$(cat "$genfile" 2>/dev/null)" = "$mygen" ] || { rm -rf "$work"; exit 0; }
+        badc=$(cat "$work"/* 2>/dev/null | grep -c '^BAD')
+        skipc=$(cat "$work"/* 2>/dev/null | grep -c '^SKIP')
+        {
+          echo "阶段：检测频道有效性"
+          echo "当前进度：$i/${total_all:-0}"
+          echo "疑似失效：$badc"
+          echo "跳过：$skipc"
+          echo "说明：这里只做初步网络检测，最终删除需要人工勾选确认。"
+          [ "$can_probe" = 0 ] && echo "提示：当前未检测到 12123 单播代理运行，HTTP 播放源会跳过，不会误判失败。"
+        } > "$validate_progress"
+      fi
+    done <$channel_candidates
+    wait
+    [ "$(cat "$genfile" 2>/dev/null)" = "$mygen" ] || { rm -rf "$work"; exit 0; }
+    total=$i
+    cat "$work"/* 2>/dev/null | grep '^BAD' | cut -f2- > "$invalid_channels"
+    bad=$(grep -c '|' "$invalid_channels" 2>/dev/null | tr -d ' ')
+    skipped=$(cat "$work"/* 2>/dev/null | grep -c '^SKIP')
+    rm -rf "$work"
+    if [ "$total" -gt 0 ] && [ $((bad * 100 / total)) -ge 70 ]; then
+      mv "$invalid_channels" "$trash_dir/invalid-channels.suspect" 2>/dev/null || true
+      : > "$invalid_channels"
+      {
+        echo "阶段：完成"
+        echo "检测总数：$total"
+        echo "疑似失效：0"
+        echo "跳过：$skipped"
+        echo "环境异常：本次检测失败比例过高，疑似 udpxy/网络模式异常，不输出可删除列表，避免误删。"
+        echo "建议：先切到稳定的 udpxy 单播模式并确认能播放，再重新验证；盒子开机请保持直通/抓包模式。"
+        echo "原始疑似列表已暂存：$trash_dir/invalid-channels.suspect"
+      } > "$validate_progress"
+      echo "检测环境异常：失败比例过高，已阻止生成可删除列表。"
+      exit 0
+    fi
+    {
+      echo "阶段：完成"
+      echo "检测总数：$total"
+      echo "疑似失效：$bad"
+      echo "跳过：$skipped"
+      echo "结果文件：$invalid_channels"
+      echo "请在页面勾选要删除的条目后确认删除。"
+      [ "$can_probe" = 0 ] && echo "提示：未运行 12123 单播代理，本次跳过了内网单播播放源验证。需要验证播放源时请先切到 udpxy 单播模式。"
+    } > "$validate_progress"
+    echo "检测完成：总数 $total，异常 $bad。"
+    cat $invalid_channels ;;
+  stop_validate)
+    [ -s "$validate_worker_pid" ] && kill "$(cat "$validate_worker_pid")" 2>/dev/null || true
+    rm -f "$validate_worker_pid"
+    {
+      echo "阶段：已停止"
+      echo "状态：用户停止了失效源验证。"
+      [ -s "$invalid_channels" ] && { echo; echo "疑似失效列表："; cat "$invalid_channels"; }
+    } > "$validate_progress"
+    echo "已停止失效源验证。" ;;
+  validate_status)
+    if [ -s "$validate_progress" ]; then
+      cat "$validate_progress"
+      if [ -s "$invalid_channels" ]; then
+        echo
+        echo "疑似失效列表："
+        cat "$invalid_channels"
+      fi
+      if [ -s "$validate_worker_pid" ] && kill -0 "$(cat "$validate_worker_pid")" 2>/dev/null; then
+        echo
+        echo "后台任务：运行中 PID $(cat "$validate_worker_pid")"
+      fi
+    else
+      echo "尚未检测。点击“验证失效源”后会显示进度。"
+    fi ;;
+  delete_channel_url)
+    url=$(get url)
+    [ -n "$url" ] || { echo "缺少 url 参数"; exit 0; }
+    backup_playlist new.m3u
+    backup_playlist new-logo.m3u
+    remove_playlist_url "$url"
+    rebuild_new_logo
+    if [ -f "$invalid_channels" ]; then
+      tmp="$invalid_channels.tmp.$$"
+      awk -F'|' -v url="$url" '$2 != url' "$invalid_channels" > "$tmp" && mv "$tmp" "$invalid_channels"
+    fi
+    log "已从基础节目单删除信号源，并根据 new.m3u 重建 new-logo.m3u：$url"
+    playlist_counts ;;
+  delete_invalid_channels)
+    [ -s $invalid_channels ] || { echo "没有异常列表，请先检测频道有效性。"; exit 0; }
+    backup_playlist new.m3u
+    ensure_runtime
+    urls="$trash_dir/invalid-urls.$$"
+    cut -d'|' -f2- $invalid_channels > "$urls"
+    awk 'NR==FNR{bad[$0]=1;next} /^#EXTINF/{prev=$0;next} {if(prev!=""){if(!bad[$0]){print prev;print $0} prev="";next} print} END{if(prev!="")print prev}' "$urls" /www/new.m3u >/www/new.m3u.tmp.$$ && mv /www/new.m3u.tmp.$$ /www/new.m3u
+    rm -f "$urls"
+    strip_m3u_logos /www/new.m3u
+    rebuild_new_logo
+    log "已删除异常频道并刷新 new-logo.m3u。" ;;
+  switch_mode)
+    mode=$(get mode)
+    case "$mode" in
+      passthrough)
+        stb_passthrough_mode
+        log "已切换为直通/抓包模式：已停止 udpxy，并重建盒子侧二层透传。"
+        echo
+        echo "代理进程检查："
+        if pgrep -af 'udpxy|msd_lite' >/dev/null 2>&1; then
+          pgrep -af 'udpxy|msd_lite'
+          echo "警告：仍发现单播代理进程，直通模式可能不干净。"
+        else
+          echo "OK：未发现 udpxy/msd_lite 进程。"
+        fi
+        echo
+        iptv_if=$(get_iptv_input_iface); box_if=$(get_capture_iface)
+        echo "网口状态："
+        iface_state_line "$iptv_if" 2>/dev/null || true
+        iface_state_line "$box_if" 2>/dev/null || true
+        iface_state_line br-iptv 2>/dev/null || true
+        echo
+        echo "tc 透传规则检查："
+        ok1=0; ok2=0
+        tc filter show dev "$box_if" ingress 2>/dev/null | grep -q "Redirect to device $iptv_if" && ok1=1
+        tc filter show dev "$iptv_if" ingress 2>/dev/null | grep -q "Redirect to device $box_if" && ok2=1
+        [ "$ok1" = 1 ] && echo "OK：$box_if -> $iptv_if" || echo "异常：缺少 $box_if -> $iptv_if"
+        [ "$ok2" = 1 ] && echo "OK：$iptv_if -> $box_if" || echo "异常：缺少 $iptv_if -> $box_if"
+        box_state=$(cat "/sys/class/net/$box_if/operstate" 2>/dev/null || echo missing)
+        [ "$box_state" = "up" ] || echo "提示：$box_if 当前 ${box_state}，如果盒子关机/重启中这是正常的；上电后应自动通。"
+        echo
+        echo "用途：此模式优先保证运营商 IPTV 盒子联网，并用于开机包/VSP/切台抓包。" ;;
+      udpxy)
+        stop_tc_bridge
+        usrc=$(refresh_udpxy_source)
+        [ -n "$usrc" ] && echo "udpxy 已绑定当前 IPTV 地址：$usrc"
+        restart_proxy
+        echo udpxy >/etc/soso-iptv-mode
+        log "已切换为 udpxy 单播模式：已关闭直通 tc 透传，适合播放器直接访问 HTTP 单播。"
+        echo
+        ps w | grep '[u]dpxy' || echo "警告：udpxy 进程未运行"
+        echo
+        echo "tc 透传规则检查："
+        iptv_if=$(get_iptv_input_iface); box_if=$(get_capture_iface)
+        if tc filter show dev "$iptv_if" ingress 2>/dev/null | grep -q mirred || tc filter show dev "$box_if" ingress 2>/dev/null | grep -q mirred; then
+          echo "警告：仍发现 tc mirred 规则，单播可能异常。"
+        else
+          echo "OK：未发现直通 tc mirred 规则。"
+        fi
+        echo
+        if test_first_stream; then
+          echo "单播自检：OK，udpxy 已收到组播并输出数据。"
+        else
+          echo "单播自检：失败或当前第一个频道无流。可换频道或检查 IPTV 入口。"
+        fi ;;
+      *) echo "未知模式：$mode" ;;
+    esac ;;
+  speed_test)
+    url=$(awk '!/^#/{if($0 ~ /^http/){print;exit}}' /www/new.m3u 2>/dev/null)
+    [ -n "$url" ] || { echo "未找到可测速的 HTTP 播放地址"; exit 0; }
+    log "测速地址：$url"
+    curl -L --max-time 12 -o /dev/null -w '下载速度: %{speed_download} bytes/s\n总耗时: %{time_total}s\nHTTP: %{http_code}\n' "$url" ;;
+  quick_port_setup)
+    iptv_if=$(get iptv_if); box_if=$(get box_if)
+    [ -n "$iptv_if" ] || iptv_if=eth1
+    [ -n "$box_if" ] || box_if=eth2
+    if configure_iptv_bridge "$iptv_if" "$box_if"; then
+      repair_capture_bridge "$box_if" >/dev/null 2>&1 || true
+      log "已保存并应用快速网口设置：IPTV入口=$iptv_if，盒子/扫描口=$box_if。"
+      echo "未重启整套路由网络，只拉起相关网口、加入 br-iptv，并重建 tc 透传规则。"
+    else
+      echo "网口设置失败。"
+    fi ;;
+  start_capture)
+    stb_passthrough_mode
+    iface=$(get_capture_iface)
+    repair_capture_bridge "$iface" >/dev/null 2>&1 || true
+    [ -s "$capture_pid" ] && kill "$(cat "$capture_pid")" 2>/dev/null || true
+    [ -s "$capture_meta_pid" ] && kill "$(cat "$capture_meta_pid")" 2>/dev/null || true
+    rm -f "$capture_pid" "$capture_meta_pid"
+    if ! tcpdump --version >$capture_err 2>&1; then
+      log "抓包启动失败：tcpdump 或 libpcap 不可用"
+      cat $capture_err
+      exit 0
+    fi
+    : > $capture_log
+    : > $capture_meta_log
+    ( tcpdump -l -U -i "$iface" -nn 'udp and dst net 224.0.0.0/4' > $capture_log 2>$capture_err & echo $! > $capture_pid ) </dev/null >/dev/null 2>&1
+    ( tcpdump -A -s0 -l -U -i "$iface" -nn -c 2000 '(tcp port 80 or tcp port 8080 or tcp port 8081 or tcp port 8888 or tcp port 9000)' > $capture_meta_log 2>$capture_meta_err & echo $! > $capture_meta_pid ) </dev/null >/dev/null 2>&1
+    sleep 1
+    capture_running && log "切台手动抓频道已启动：$iface。请在 IPTV 盒子上切换缺失频道，每个频道停留 3-5 秒；右侧状态会实时显示已抓到的组播地址数量。" || { log "抓包启动失败"; cat $capture_err 2>/dev/null; cat $capture_meta_err 2>/dev/null; } ;;
+  capture_status)
+    iface=$(cat /etc/iptv-capture-iface 2>/dev/null)
+    [ -n "$iface" ] || iface=$(uci -q get network.wan.device || echo eth1)
+    running=no
+    capture_running && running=yes
+    tmp=$trash_dir/capture-live-addrs.txt
+    capture_addrs > "$tmp"
+    count=$(wc -l < "$tmp" 2>/dev/null | tr -d ' ')
+    latest=$(tail -1 "$tmp" 2>/dev/null)
+    meta_name=$(capture_name)
+    meta_logo=$(capture_logo)
+    started=""
+    [ -s "$capture_log" ] && started=$(ls -l --time-style=long-iso "$capture_log" 2>/dev/null | awk '{print $6" "$7}')
+    log "切台手动抓频道状态"
+    echo "状态：$([ "$running" = yes ] && echo 运行中 || echo 未运行)"
+    echo "抓包口：$iface"
+    [ -n "$started" ] && echo "开始时间：$started"
+    echo "已抓到组播地址：${count:-0} 个"
+    [ -n "$latest" ] && echo "最新地址：$latest"
+    [ -n "$meta_name" ] && echo "频道名称候选：$meta_name"
+    [ -n "$meta_logo" ] && echo "台标资源候选：$meta_logo"
+    if [ -s "$tmp" ]; then
+      echo
+      echo "已发现地址（最近 20 个）："
+      tail -20 "$tmp"
+    else
+      echo
+      echo "还没发现组播地址。请确认盒子正在播放直播频道，并切换到缺失频道停留 3-5 秒。"
+    fi ;;
+  stop_capture)
+    [ -s $capture_pid ] && kill "$(cat $capture_pid)" 2>/dev/null || true
+    [ -s $capture_meta_pid ] && kill "$(cat $capture_meta_pid)" 2>/dev/null || true
+    rm -f $capture_pid $capture_meta_pid
+    log "已停止，开始分析原始组播流量..."
+    tmp=$capture_addrs_txt
+    capture_addrs > "$tmp"
+    meta_logo=$(capture_logo)
+    meta_name=$(capture_name)
+    total=$(wc -l < "$tmp" 2>/dev/null | tr -d ' ')
+    log "本次抓到可用组播地址：${total:-0} 个"
+    [ -n "$meta_name" ] && log "识别到频道名称候选：$meta_name" || log "未识别到明文频道名称"
+    [ -n "$meta_logo" ] && log "识别到台标资源候选：$meta_logo" || log "未识别到明文台标资源"
+    added=0
+    existed=0
+    enriched=0
+    logo_updates=$trash_dir/capture-logo-updates.$$
+    : > "$logo_updates"
+    if [ ! -s "$tmp" ]; then
+      echo "没有解析到 UDP 组播频道地址。请确认抓包期间 IPTV 设备或播放器有切换/播放频道。"
+      echo "说明：被动抓包只能看到已经有设备请求并正在传输的组播流，运营商未推送的频道不会自动出现。"
+      exit 0
+    fi
+    echo "候选地址："
+    cat "$tmp"
+    echo
+    echo "差异分析："
+    while read -r addr; do
+      [ -n "$addr" ] || continue
+      current_name="$meta_name"
+      [ -n "$current_name" ] || current_name=$(playlist_name_for_addr "$addr")
+      current_logo="$meta_logo"
+      [ -n "$current_logo" ] || current_logo=$(epg_logo_for_name "$current_name")
+      if playlist_has_addr "$addr"; then
+        existed=$((existed+1))
+        if update_playlist_metadata "$addr" "$current_name" "$current_logo"; then
+          enriched=$((enriched+1))
+          echo "已存在并更新元数据：$addr"
+        else
+          echo "已存在：$addr"
+        fi
+      else
+        append_captured_channel "$addr" rtp "$current_name" "$current_logo"
+        added=$((added+1))
+        echo "新增并写入 new.m3u：$addr"
+      fi
+      [ -n "$current_logo" ] && echo "$addr|$current_logo" >> "$logo_updates"
+    done < "$tmp"
+    if [ "$added" -gt 0 ] || [ "$enriched" -gt 0 ]; then
+      tpl='https://live.fanmingming.com/tv/{name}.png'
+      strip_m3u_logos /www/new.m3u
+      decorate /www/new.m3u /www/new-logo.m3u "$tpl"
+      [ -f /www/tv.m3u ] && decorate /www/tv.m3u /www/tv-logo.m3u "$tpl"
+      while IFS='|' read -r addr logo; do
+        update_logo_metadata "$addr" "$logo" >/dev/null 2>&1 || true
+      done < "$logo_updates"
+      log "已重新生成带台标节目单：/www/new-logo.m3u"
+    fi
+    rm -f "$logo_updates"
+    log "完成：新增 $added 个，已存在 $existed 个，更新台标/频道名 $enriched 个。"
+    playlist_counts ;;
+  save_channel)
+    name=$(get name); addr=$(get addr); proto=$(get proto); logo=$(get logo); logoTpl=$(get logoTpl); file=$(get file)
+    [ -n "$name" ] || { echo "频道名称为空"; exit 0; }; [ -n "$addr" ] || { echo "组播地址为空"; exit 0; }
+    [ -n "$proto" ] || proto=rtp; [ "$file" = tv ] || file=new; [ -n "$logoTpl" ] || logoTpl='https://live.fanmingming.com/tv/{name}.png'
+    id=$(echo "$name" | tr -d ' -'); [ -n "$logo" ] || logo=$(echo "$logoTpl" | sed "s#{name}#$id#g")
+    m3u="/www/$file.m3u"; txt="/www/$file.txt"; url="$(udpxy_base)/$proto/$addr"
+    grep -Fq "$url" "$m3u" 2>/dev/null && { echo "已存在：$url"; exit 0; }
+    printf '#EXTINF:-1 tvg-id="%s" tvg-name="%s",%s\n%s\n' "$id" "$name" "$name" "$url" >> "$m3u"
+    printf '%s,%s\n' "$name" "$url" >> "$txt"
+    if [ "$file" = "new" ]; then
+      strip_m3u_logos /www/new.m3u
+      rebuild_new_logo
+      update_logo_metadata "$addr" "$logo" >/dev/null 2>&1 || true
+    fi
+    log "已保存频道：$name -> $url" ;;
+  apply_iptv)
+    iface=$(get iface); proto=$(get proto); mac=$(get mac); hostname=$(get hostname); vendorid=$(get vendorid); clientid=$(get clientid); user=$(get pppoeUser); pass=$(get pppoePass)
+    [ -n "$iface" ] || iface=eth1; [ -n "$proto" ] || proto=dhcp
+    log "应用 IPTV 接口：$iface / $proto"
+    uci set network.wan.device="$iface"; uci set network.wan.proto="$proto"; uci set network.wan.defaultroute='0'; uci set network.wan.peerdns='0'
+    [ -n "$mac" ] && uci set network.wan.macaddr="$mac" || uci -q delete network.wan.macaddr
+    [ -n "$hostname" ] && uci set network.wan.hostname="$hostname" || uci -q delete network.wan.hostname
+    [ -n "$vendorid" ] && uci set network.wan.vendorid="$vendorid" || uci -q delete network.wan.vendorid
+    [ -n "$clientid" ] && uci set network.wan.clientid="$clientid" || uci -q delete network.wan.clientid
+    if [ "$proto" = pppoe ]; then [ -n "$user" ] && uci set network.wan.username="$user"; [ -n "$pass" ] && uci set network.wan.password="$pass"; else uci -q delete network.wan.username; uci -q delete network.wan.password; fi
+    uci commit network; ifup wan >$ifup_log 2>&1 || true; restart_proxy; cat $ifup_log ;;
+  check_no_proxy)
+    log "组播路由检测"; ip route get 239.21.1.120 2>/dev/null || true
+    echo; log "Nikki/OpenClash 代理接口检测"; ip route get 239.21.1.120 2>/dev/null | grep -q nikki && echo "警告：可能走 nikki" || echo "正常：未走 nikki，按路由应从 IPTV 接口处理"
+    echo; log "防火墙 IPTV 组播规则计数"; nft list chain inet fw4 input_wan 2>/dev/null | grep -E 'IPTV-Multicast-In|DoS UDP' ;;
+  fix_multicast_proxy)
+    log "修复组播被透明代理(Nikki/OpenClash)..."
+    echo "修复前：$(ip route get 239.21.1.120 2>/dev/null | head -1)"
+    if [ -z "$(uci -q get network.iptv_mcast_239)" ]; then
+      uci set network.iptv_mcast_239='route' 2>/dev/null || true
+      uci set network.iptv_mcast_239.interface='wan' 2>/dev/null || true
+      uci set network.iptv_mcast_239.target='239.0.0.0' 2>/dev/null || true
+      uci set network.iptv_mcast_239.netmask='255.0.0.0' 2>/dev/null || true
+      uci commit network 2>/dev/null || true
+    fi
+    for net in 239.0.0.0/8 224.0.0.0/4; do
+      while ip rule del to "$net" 2>/dev/null; do :; done
+      ip rule add to "$net" lookup main pref 999 2>/dev/null || true
+      ip route replace "$net" dev br-iptv scope link 2>/dev/null || true
+    done
+    ip route flush cache 2>/dev/null || true
+    sleep 1
+    after=$(ip route get 239.21.1.120 2>/dev/null | head -1)
+    echo "修复后：$after"
+    if echo "$after" | grep -q nikki; then
+      echo "⚠ 仍可能走代理：请在 Nikki/OpenClash 里把 239.0.0.0/8、224.0.0.0/4 加入直连/绕过(bypass)名单。"
+    else
+      echo "✓ 组播已强制直连 br-iptv（高优先级 ip rule + 专用路由），未走代理。"
+    fi
+    log "组播代理修复完成。" ;;
+  *) echo "未知动作: $action" ;;
+esac

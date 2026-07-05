@@ -1,0 +1,53 @@
+#!/bin/sh /etc/rc.common
+
+START=96
+STOP=10
+USE_PROCD=1
+
+IPTV_IN_FILE="/etc/iptv-input-iface"
+STB_USB_FILE="/etc/iptv-capture-iface"
+
+get_iptv_in() {
+  iface="$(cat "$IPTV_IN_FILE" 2>/dev/null)"
+  [ -n "$iface" ] || iface="eth1"
+  echo "$iface"
+}
+
+get_stb_usb() {
+  iface="$(cat "$STB_USB_FILE" 2>/dev/null)"
+  [ -n "$iface" ] || iface="eth2"
+  echo "$iface"
+}
+
+apply_rules() {
+  IPTV_IN="$(get_iptv_in)"
+  STB_USB="$(get_stb_usb)"
+  [ "$IPTV_IN" = "$STB_USB" ] && return 1
+
+  ip link set "$IPTV_IN" up 2>/dev/null || true
+  ip link set "$STB_USB" up 2>/dev/null || true
+
+  tc qdisc del dev "$IPTV_IN" ingress 2>/dev/null || true
+  tc qdisc del dev "$STB_USB" ingress 2>/dev/null || true
+  tc qdisc add dev "$IPTV_IN" ingress 2>/dev/null || true
+  tc qdisc add dev "$STB_USB" ingress 2>/dev/null || true
+  tc filter add dev "$STB_USB" ingress matchall action mirred egress redirect dev "$IPTV_IN" 2>/dev/null || true
+  tc filter add dev "$IPTV_IN" ingress matchall action mirred egress redirect dev "$STB_USB" 2>/dev/null || true
+}
+
+start_service() {
+  apply_rules
+}
+
+stop_service() {
+  IPTV_IN="$(get_iptv_in)"
+  STB_USB="$(get_stb_usb)"
+  tc qdisc del dev "$IPTV_IN" ingress 2>/dev/null || true
+  tc qdisc del dev "$STB_USB" ingress 2>/dev/null || true
+}
+
+restart() {
+  stop_service
+  sleep 1
+  start_service
+}
