@@ -118,7 +118,6 @@ docker/       Docker runtime
 scripts/      IPK and manual package build scripts
 release/      Prebuilt release packages
 docs/         Installation, security and troubleshooting notes
-assets/       Project assets, including the 15 CNY Alipay payment QR code
 ```
 
 ## Playlist, Logos and EPG
@@ -146,11 +145,3 @@ MIT License. See [LICENSE](LICENSE).
 ## Disclaimer
 
 This project is intended for home network learning, personal device management and troubleshooting of your own ISP-provisioned IPTV service. ISP network designs and firmware environments vary widely. Use it only where you are allowed to modify the relevant devices and network configuration.
-
-## Donation
-
-If you like this project, or if it helps you solve one small IPTV setup problem, you can use the Alipay payment QR code below to donate 15 CNY, buy me a milk tea and support future maintenance.
-
-<p>
-  <img src="assets/alipay-donate-15.jpg" alt="Alipay 15 CNY payment QR code" width="360">
-</p>
