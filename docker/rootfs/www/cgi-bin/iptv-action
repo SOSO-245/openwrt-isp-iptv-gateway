@@ -294,7 +294,7 @@ current_iptv_ip(){
 current_lan_gateway(){
   gw=$(ip route show default dev br-lan 2>/dev/null | awk '/^default /{print $3; exit}')
   [ -n "$gw" ] || gw=$(uci -q get network.lan.gateway)
-  [ -n "$gw" ] || gw=192.168.50.1
+  [ -n "$gw" ] || return 1
   echo "$gw"
 }
 refresh_udpxy_source(){
@@ -308,6 +308,7 @@ refresh_udpxy_source(){
   echo "$ip"
 }
 repair_network(){
+  lan_gw=$(current_lan_gateway) || { echo "LAN gateway is unknown; network was not changed."; return 1; }
   uci set network.wan.defaultroute='0' 2>/dev/null || true
   uci set network.wan.peerdns='0' 2>/dev/null || true
   uci set network.wan.metric='500' 2>/dev/null || true
@@ -333,7 +334,6 @@ repair_network(){
     echo "$line" | grep -q 'proto static' && continue
     [ -n "$line" ] && ip route del $line 2>/dev/null || true
   done
-  lan_gw=$(current_lan_gateway)
   if ip route show default dev br-lan 2>/dev/null | grep -q '^default '; then
     if ip route show default dev br-lan 2>/dev/null | grep -q 'proto static'; then
       ip route del default via "$lan_gw" dev br-lan metric 10 2>/dev/null || true

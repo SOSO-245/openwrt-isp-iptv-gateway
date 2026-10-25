@@ -3,174 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SOSO IPTV 网关 Wiki</title>
+<title>IPTV 家庭网关 · 使用说明</title>
 <link rel="icon" type="image/svg+xml" href="/iptv/assets/favicon.svg">
+<link rel="stylesheet" href="/iptv/console.css?v=3">
 <style>
-:root{--accent:#2f80ed;--bg:#101821;--panel:#182331;--panel2:#202e3d;--text:#e9eef5;--muted:#9aa8b7;--line:#2d3b4c;--ok:#25d28a}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.wrap{max-width:1000px;margin:0 auto;padding:24px 22px 48px}
-h1{font-size:26px;font-weight:700;margin:0 0 6px}
-h2{font-size:18px;margin:26px 0 10px;display:flex;align-items:center;gap:8px;border:0;padding:0}
-h2::before{content:"";width:4px;height:16px;border-radius:3px;background:var(--accent);display:inline-block}
-h3{margin:16px 0 5px;font-size:15px;color:var(--text)}
-.muted,p,li{color:var(--muted)}
-.card{background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:13px;padding:15px 17px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,.10)}
-ul{margin:10px 0;padding-left:20px}
-.mono,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0b1118;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:#dbeafe;font-size:13px}
-a{color:#9dccff;text-decoration:none}a:hover{text-decoration:underline}
-.nav{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:12px;padding:8px;margin:0 0 18px;display:flex;gap:5px;flex-wrap:wrap}
-.nav a{color:var(--muted);background:color-mix(in srgb,var(--panel2) 70%,transparent);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:13px;font-weight:600}
-.nav a:hover{color:var(--text);text-decoration:none}
-.card.new{border-left:3px solid var(--accent)}
-.card.new b{color:var(--accent)}
-@media(max-width:680px){.wrap{padding:16px 14px}}
+.guide{max-width:880px;margin:0 auto;padding:32px 24px 64px}.guide header{display:flex;justify-content:space-between;align-items:center;gap:20px;border-bottom:1px solid var(--line);padding-bottom:24px}.guide h1{font-size:22px}.guide h2{margin:32px 0 14px}.guide h3{font-size:14px;margin:20px 0 10px}.guide p,.guide li{line-height:1.9;color:var(--muted)}.guide nav{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}.guide code{font:12px/1.7 ui-monospace,monospace;background:var(--panel2);padding:2px 5px;overflow-wrap:anywhere}.guide li{margin:8px 0}.guide ul,.guide ol{padding-left:24px}.guide table{font-size:13px}.guide th{width:100px}.guide section{border-bottom:1px solid var(--line);padding-bottom:20px}.guide .note{border-left:2px solid var(--warn);padding-left:14px}@media(max-width:400px){.guide{padding:20px 16px}.guide header{align-items:flex-start}.guide h1{font-size:19px}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<h1>SOSO IPTV 网关 Wiki</h1>
-<p class="muted">面向家庭旁路由的 IPTV 抓包、VSP 频道提取、节目单管理、台标维护、主题配置和故障排查说明。</p>
-<div class="nav">
-<a href="#whatsnew">新功能</a><a href="#principle">工作原理</a><a href="#wire">设备连接</a><a href="#mode">网络模式</a><a href="#capture">抓包</a><a href="#vsp">VSP</a><a href="#playlist">节目表</a><a href="#logs">日志</a><a href="#theme">页面配置</a><a href="#spoof">机顶盒伪装</a><a href="#errors">避坑修复</a>
-</div>
-
-<h2 id="whatsnew">新功能（v1.1.5）</h2>
-<div class="card new">
+<script>try{if(localStorage.iptvColorMode==='dark'||(!localStorage.iptvColorMode&&matchMedia('(prefers-color-scheme: dark)').matches))document.body.classList.add('iptv-dark');}catch(_){}</script>
+<main class="guide">
+<header><h1>IPTV 家庭网关 · 使用说明</h1><a href="/iptv/">返回控制台</a></header>
+<nav aria-label="说明目录"><a href="#daily">日常管理</a><a href="#discovery">源发现</a><a href="#media">节目资料</a><a href="#automation">自动任务</a><a href="#maintenance">系统维护</a><a href="#troubleshooting">常见问题</a></nav>
+<section id="daily">
+<h2>日常管理</h2>
+<p>本说明对应源码中的新版六区控制台。既有 1.1.5 安装包和 Docker 独立管理页仍为旧界面；不要把源码改版当作已安装升级。</p>
+<table><tbody>
+<tr><th>总览</th><td>播放服务、正式频道、待确认差异、订阅地址、最近任务和实际连接状态。</td></tr>
+<tr><th>频道管理</th><td>搜索、分组、逐条编辑、新增、保存和历史恢复。</td></tr>
+<tr><th>源发现</th><td>入口采样、媒体验证、全量检查、差异、名称确认及扫描记录。</td></tr>
+<tr><th>节目资料</th><td>EPG 来源、频道别名、台标来源及本地台标库。</td></tr>
+<tr><th>自动任务</th><td>短采样、周全量、保守自动更新、扫描范围和 EPG 计划。</td></tr>
+<tr><th>系统维护</th><td>诊断、日志以及折叠收纳的网络、机顶盒和订阅配置。</td></tr>
+</tbody></table>
+<h3>播放与节目单</h3>
+<p>播放器通常订阅 <code>new-logo.m3u</code>，基础节目单为 <code>new.m3u</code>。从总览复制实际地址；EPG 使用本地 <code>/epg.xml.gz</code> 或兼容地址 <code>/t.xml.gz</code>。</p>
+<p>频道管理中的修改先暂存，再统一确认保存。切换文件、刷新或恢复历史时会提示未保存内容；保存失败保留草稿。保存前重新读取源文件，如发现外部变化则停止覆盖。该检查不是服务器端原子锁，仍应避免与其他编辑器同时保存。</p>
+<p>原始 M3U 和历史版本位于折叠区。普通逐条编辑保留其他频道、未知标签和排序；原始文本编辑则由操作者维护完整语法。运营商缓存 <code>vsp.m3u</code> 在此页只读，不作为正式节目单直接覆盖。</p>
+</section>
+<section id="discovery">
+<h2>源发现</h2>
+<p>旁路由连接 IPTV 专网，NAS 负责媒体分析。日常被动采样不需要机顶盒开机，但十秒只会记录当时经过接口的流量，不能保证采齐全部频道。零观察不等于频道下线。</p>
 <ul>
-<li><b>分页管理界面</b>：状态/访问/拓扑/播放统计归入「总览」，其余分为「节目单 / 抓包发现 / 网络与接口 / 高级与日志」5 个标签页；顶部新增整体健康状态栏。</li>
-<li><b>可视化网络拓扑</b>：分两条线路展示——线路1 光猫→盒子直通，线路2 光猫→udpxy→播放器/终端，节点按健康着色，一眼看出故障点。</li>
-<li><b>🚀 新装一键配置(到可播放)</b>：新机装好后点一次即可完成网口、br-iptv 桥、二层透传、路由修复、启用 udpxy 单播并自检出流。</li>
-<li><b>一键网口/路由修复</b>：拉起网口、重建桥与透传、确保 IPTV 口不抢默认路由、恢复 LAN 默认路由、保留 239 组播专用路由。</li>
-<li><b>更新IPTV地址(udpxy)</b>：IPTV 口 DHCP 地址变化后，一键把 udpxy 来源更新为当前地址并重启（也已做成 hotplug 自动更新）。</li>
-<li><b>修复被透明代理</b>：组播被 Nikki/OpenClash 拦截时，用高优先级 ip rule + 专用路由强制 239/224 直连 br-iptv。</li>
-<li><b>主题预设</b>：8 套配色一键预览，配合主色/背景/头像/透明度/本地上传，完整自定义皮肤。</li>
-<li><b>台标本地化</b>：台标统一缓存到旁路由 <code>/www/iptv/logos/</code> 并自动归一化（去 4K/超高清/高清/线路N 等后缀），URL 带版本号便于播放器刷新。</li>
-<li><b>播放统计持久化</b>：重启不再丢失。</li>
+<li><b>立即采样：</b>短时观察当前入口，不主动遍历地址。</li>
+<li><b>小范围扫描：</b>仅在允许范围内有界检查，可能产生取流流量。</li>
+<li><b>验证待确认项：</b>检查候选是否包含可识别音视频，不凭收到 UDP 包判断可播。</li>
+<li><b>复查无响应：</b>每轮最多复查四个异常地址。夜间无节目不能直接判定失效。</li>
+<li><b>全量检查：</b>覆盖正式节目单、历史地址和配置范围，不代表运营商全部地址池；支持暂停与续跑。</li>
 </ul>
-</div>
-
-<h2 id="principle">工作原理</h2>
-<div class="card">
-<p>运营商 IPTV 多数使用专用 IPTV 口、DHCP/认证、IGMP 加组和 UDP/RTP 组播。普通播放器无法直接知道所有频道地址，所以本工具让旁路由监听 IPTV 盒子的请求，提取频道组播地址，再生成家庭内网播放器可用的 M3U 节目单。</p>
-<p>核心链路是：光猫 IPTV 口 -> 旁路由 IPTV 网口 -> 二层桥/转发 -> USB 网口 -> IPTV 盒子。旁路由优先保证盒子正常通信，再旁路分析 DHCP、IGMP、HTTP/API、UDP/RTP 组播。</p>
-<p>页面当前按日常流程组织：先看状态和访问地址，再管理节目表，再处理抓包和 VSP，最后是高级网络和机顶盒伪装。</p>
-</div>
-
-<h2 id="wire">设备连接方式</h2>
+<p>名称来源区分原节目单、流内信息、缓存候选和人工确认。名称待识别时可深度识别或核对后确认，不猜名称直接入库。实际内容未核实前不要勾选确认。</p>
+<p>NAS 不可用时，已有结果标记为未更新，提交按钮停用；重连后恢复。导出提供差异 JSON 和候选 M3U，不自动代替正式节目单。</p>
+</section>
+<section id="media">
+<h2>节目资料</h2>
+<p>EPG 来源每行一个 XMLTV 地址，可使用 XML 或 gzip 文件。台标模板每行一个，含 <code>{name}</code>；EPG 的 <code>icon src</code> 也可提供台标。没有图标的节目数据不能凭空生成真实台标。</p>
+<p>一站式更新依次整理本地 EPG、提取并补全台标、生成必要的文字占位台标及带台标节目单。本地台标库为 <code>/www/iptv/logos/</code>。台标删除只针对对应图标文件，须先确认。</p>
+<p>单项工具保留在折叠区。旧外部工具箱强制覆盖入口已移除；已有上游配置不会因此被自动删除。</p>
+</section>
+<section id="automation">
+<h2>自动任务</h2>
+<p>短采样、周全量和 EPG 更新分别配置。页面显示下次时间与最近执行结果；“已提交”不代表完整检查已完成。采用北京时间，工作日选项按周一至周五计算，不自动处理法定假期和调休。</p>
+<p>短采样与周全量在同一分钟重合时，由全量替代短采样。全量只在观察心跳有效且未检测到播放时继续下一条取流，仍有每轮预算，不持续压满网络。</p>
+<p>自动更新仅接纳已明确名称、单节目且重复验证通过的新源；同名换址还要求旧源满足多次白天失败和时间跨度条件。不自动删除频道，尽量保留排序、台标和元数据。</p>
+<p class="note">本地节目单已更新但 NAS 未确认时，显示“NAS 待同步”，后续仅补同步。未完成更新清单会阻止再次合并，需核对备份与当前文件，不通过清空状态掩盖问题。</p>
+</section>
+<section id="maintenance">
+<h2>系统维护</h2>
+<p>先查看诊断与日志，再按证据处理。机顶盒接口未连接是可选状态，不单独判定整个网关故障。</p>
+<h3>网络与接口</h3>
+<p>高级区保留接口选择、组播直连、地址更新、模式切换和 IPTV 身份参数。接口名因设备而异，必须核对接线；IPTV 接口不应成为家庭默认网关。修改可能中断播放，操作前保留原值与回退资料。</p>
+<h3>机顶盒与运营商工具</h3>
+<p>开机包、切台抓取及 VSP 获取仅供需要运营商会话的环境按需使用。可能包含 Cookie、会话标识等敏感数据，抓包与日志不得公开上传。HTTPS 或私有协议不保证能解析。</p>
+<p>VSP 候选单独保存。合并前核对内容；候选表可能过期。无机顶盒的自动发现流程不依赖这些工具。</p>
+<h3>账号、外观与日志</h3>
+<p>右上角保留账号管理和深浅色切换。新安装需更改默认账号。复杂主题、背景上传、透明度和重复拓扑展示已移除；旧素材不自动删除。订阅地址配置收纳在系统维护底部。</p>
+<p>日志来自旁路由服务端，便于跨设备核对。临时日志和抓包不能替代备份；不要在排障未完成时随意清理证据。</p>
+</section>
+<section id="troubleshooting">
+<h2>常见问题</h2>
 <ul>
-<li><code>eth1</code>：推荐接光猫 IPTV 口，作为 IPTV 数据入口。</li>
-<li><code>eth2</code>：推荐 USB 网口，接运营商 IPTV 盒子，用于抓包和盒子直通。</li>
-<li><code>br-iptv</code>：IPTV 专用桥，不承担家庭 LAN 网关。</li>
-<li><code>/etc/iptv-capture-iface</code>：记录抓包口，默认 <code>eth2</code>。</li>
+<li><b>没有发现新源：</b>确认入口、NAS 和采样记录。被动采样无流量时结果为空，不能推断所有地址不可用。</li>
+<li><b>扫描暂停：</b>检查是否正在播放、观察心跳是否有效、NAS 是否在线或任务预算是否耗尽。</li>
+<li><b>播放失败：</b>区分 IPTV 地址、组播路由、代理直连、udpxy 来源及单频道临时停播，不先删除频道。</li>
+<li><b>保存提示源已变化：</b>保留本地修改内容，重新读取并核对，不强制覆盖自动发现的新结果。</li>
+<li><b>台标不显示：</b>先检查实际台标 URL 是否可访问，再检查播放器指南或图像缓存。不要直接归因于缓存。</li>
+<li><b>VSP 获取停滞：</b>核对会话有效性和任务日志，不重复提交多个抓取任务。</li>
 </ul>
-
-<h2 id="mode">网络模式</h2>
-<div class="card">
-<p>“抓包配套：网络模式与网口”区域主要是给抓包流程使用。先确认 <code>eth1</code> 接光猫 IPTV 口、<code>eth2</code> 或 USB 网口接 IPTV 盒子，再切换模式。</p>
-<h3>直通/抓包模式</h3>
-<p>优先保证 IPTV 盒子像直连光猫一样工作。适合正常使用盒子、抓取开机配置、抓原始组播。此模式下通常关闭或弱化 <code>udpxy</code>。</p>
-<h3>udpxy 单播模式</h3>
-<p>把 UDP 组播转换成 HTTP 单播，适合电视 App、Emby、VLC 等播放器使用。切换模式可能短暂影响播放，所以页面会提示确认。</p>
-<h3>组播绕开代理</h3>
-<p>IPTV 组播流量不应经过 Nikki/OpenClash。页面顶部状态和“确认组播不走代理”用于检查 <code>239.0.0.0/8</code> 是否保持直连。</p>
-</div>
-
-<h2 id="capture">抓包与频道发现</h2>
-<div class="card">
-<h3>抓开机包 / VSP 完整频道表</h3>
-<p>用于盒子从断电开机到进入首页/直播页期间的流量分析。推荐流程：关闭盒子 -> 点击“开始抓开机包” -> 给盒子上电并进入直播/频道列表 -> 点击“停止开机包” -> 点击“分析开机包”。</p>
-<p>这个流程会尽量从明文 HTTP/API 中提取配置地址、频道接口、EPG、组播地址、Cookie、JSESSIONID 和 VSP 请求信息。如果运营商使用 HTTPS 或私有加密，可能只能看到域名和 IP，无法直接还原完整节目单。</p>
-<h3>切台手动抓频道</h3>
-<p>用于补缺失频道。点击“开始切台抓频道”后，在 IPTV 盒子上逐个切到缺失频道，每个频道停留 3-5 秒。右侧状态栏会实时显示是否运行、抓包口、已抓到的组播地址数量、最新地址、频道名候选和台标候选。</p>
-<p>点击“停止并补入节目单”后，系统会分析本次出现过的组播地址：已存在的源不会重复添加，新源会补入基础节目单，并尝试用明文识别到的频道名/台标、本地台标库、在线台标源和在线 EPG 图标补全信息。</p>
-</div>
-
-<h2>组播盲扫</h2>
-<ul>
-<li>“组播盲扫”：只在抓不到包时小范围使用，例如 <code>239.254.10.1-255:5000</code>。盲扫可能产生较多探测流量，不建议大范围长期运行。</li>
-<li>盲扫只能生成候选地址，不能保证频道名称准确。优先使用 VSP 或切台抓频道获取名称和地址。</li>
-</ul>
-
-<h2 id="vsp">VSP 获取与按规则合并</h2>
-<div class="card">
-<p>“VSP获取并单独保存”会利用开机包里识别到的 VSP 会话，先调用 <code>QueryAllChannel</code> 获取频道清单，再逐个调用 <code>PlayChannel</code> 换取组播播放地址。这个过程可能较慢，右侧状态栏会显示频道总数、当前进度、当前频道、成功/失败/跳过数量和最近地址。</p>
-<p>VSP 获取不会直接修改正式节目单，而是单独保存候选文件：</p>
-<ul>
-<li><code>/www/vsp.m3u</code>：VSP 基础候选节目单。</li>
-<li><code>/www/vsp.tsv</code>：结构化候选清单，供后续按规则合并。</li>
-</ul>
-<p>确认 VSP 候选数量和名称正常后，到“节目表在线编辑”区域点击“按规则合并”。当前合并顺序为：4K/超高清 -> CCTV-1 到 CCTV-N -> 热门省级卫视 -> 地方卫视 -> VSP 其他频道 -> 原节目单剩余频道 -> 国外频道。CCTV-4K 留在 4K/超高清分类里；CCTV 内部按频道号升序排列，同序号高清源优先作为线路 1；同名但地址不同才会保留为多线路。</p>
-</div>
-
-<h2 id="playlist">节目表、台标和历史</h2>
-<div class="card">
-<p>面向播放器的正式节目单主要有两份：基础节目单 <code>new.m3u</code> 和带台标节目单 <code>new-logo.m3u</code>。访问地址区域默认只保留本地直播源、本地带台标和本地 EPG。</p>
-<p>在线编辑器会显示当前正在编辑的文件名和节目数量。统计规则是读取文本里的 <code>#EXTINF</code> 行数，所以手动编辑时数量会即时变化。</p>
-<p>每次保存会生成历史备份，保留数量可设置为 3-10 版，修改失败可以选择历史版本恢复。M3U 一个频道通常由 <code>#EXTINF</code> 行和下一行播放地址组成，调整顺序时两行要一起移动。</p>
-<p>“可选删除失效源”会先检测基础节目单里的播放地址，再列出可逐条删除的失效源，不会直接批量误删。</p>
-<p>“一键增加台标”会以 <code>new.m3u</code> 为基础，先复用旁路由本地台标库，再从在线台标源和在线 EPG 图标补齐，结果写入 <code>new-logo.m3u</code>，不改动基础节目单。“一键去除台标”会移除 <code>tvg-logo</code> 字段，结果写入 <code>new.m3u</code>。</p>
-</div>
-
-<h2 id="epg">本地 EPG、在线源和台标补全</h2>
-<div class="card">
-<p>“本地 EPG 管理”用于把多个在线 XMLTV/EPG 源汇总到旁路由本地，生成 <code>/www/epg.xml.gz</code> 和兼容地址 <code>/www/t.xml.gz</code>。播放器和 Emby 建议优先使用旁路由本地 EPG：<code>http://路由器IP:8080/epg.xml.gz</code>。</p>
-<p>在线 EPG 源每行一个，支持 <code>.xml</code> 和 <code>.xml.gz</code>。系统会按当前 <code>new.m3u</code> 的频道名过滤，只保留节目单里实际用得到的频道和节目，避免把外部大 EPG 全量塞进路由器。</p>
-<p>在线台标源每行一个模板，必须包含 <code>{name}</code>。系统会用频道原名和归一化后的频道名分别替换 <code>{name}</code> 尝试下载。默认源是 GitHub fanmingming 台标库。</p>
-<p>频道别名区域保留兼容规则，例如 <code>CCTV$1 =&gt; regex:/^CCTV[-\s]*(\d{1,2}(\s*P(LUS)?|[K\+])?)(?![\s-]*(美洲|欧洲)).*/i</code>。由于 OpenWrt busybox 不完整支持 PCRE 负向判断，CCTV 系列实际由插件内置兼容规则处理，避免正则不兼容导致更新失败。</p>
-<p>“一站式更新”会依次执行：生成本地 EPG、从 EPG 里提取 <code>&lt;icon src&gt;</code> 台标、从在线台标源补缺、为仍缺失台标的频道生成本地文字兜底台标，最后重建 <code>new-logo.m3u</code>。</p>
-<p>定时任务默认启用，时间窗 <code>00:00-23:59</code>，间隔 6 小时。它只更新 EPG 和台标，不切换网口、不重启网络、不重新排序节目单。保存天数用于保留本地 EPG 历史备份，防止在线源异常时无法回滚。</p>
-</div>
-
-<h2 id="phpepg">可选外部工具箱</h2>
-<div class="card">
-<p>本插件已不依赖 php-epg。新机器只安装本插件即可完成 IPTV 网络修复、节目单、udpxy、台标缓存和本地 EPG 输出。</p>
-<p>如果你已经有群晖 php-epg，可把它保留为可选素材仓库：将主机 IP 写入 <code>/etc/soso-iptv-epg-host</code> 后，“同步外部工具箱台标”会读取 <code>/data/icon/</code>，本地 EPG 生成器也会把该主机的 <code>t.xml.gz</code> 追加为一个可选上游源。</p>
-<p>没有配置 <code>/etc/soso-iptv-epg-host</code> 时，插件不会主动访问外部工具箱，也不会把 NAS 在线状态当作本机 EPG 正常。</p>
-</div>
-
-<h2 id="logs">日志与跨客户端查看</h2>
-<div class="card">
-<p>管理页底部有两个独立日志区域，适合手机操作、电脑查看结果。日志保存在旁路由本地 <code>/tmp/iptv/trash/</code>，不同浏览器、不同设备打开页面时看到的是同一份服务端日志。</p>
-<h3>抓包日志</h3>
-<p>抓包日志用于查看开机包、VSP 获取、切台抓频道、抓包临时数据清理等流程。对应文件是 <code>/tmp/iptv/trash/capture-ui-log.txt</code>。如果你用手机点击“VSP获取并单独保存”，电脑端打开页面后点击“查看抓包日志”即可看到同一份进度和最终结果。</p>
-<p>抓包日志区域还会叠加显示当前 VSP 进度、候选节目单条数、最近失败频道，以及切台抓包已经发现的组播地址数量。</p>
-<h3>系统日志</h3>
-<p>系统日志用于查看普通管理操作，例如自检、网口设置、USB 抓包口调试、模式切换、保存频道、节目表操作、账号与配置修改等。对应文件是 <code>/tmp/iptv/trash/ui-log.txt</code>。</p>
-<h3>下载与清空</h3>
-<p>两个日志区域都提供“查看、下载、清空”按钮。下载会把当前服务端日志保存为 <code>.txt</code> 文件；清空只清对应日志文件，不删除 <code>pcap</code> 抓包、节目单、VSP 候选文件、主题素材或历史版本。</p>
-</div>
-
-<h2 id="theme">页面配置、主题和清理</h2>
-<div class="card">
-<h3>后台 YAML 配置</h3>
-<p><code>/etc/soso-iptv-gateway.yaml</code> 用于自定义页面标题、作者、说明、Logo 和访问地址。普通字段写法：<code>title: IPTV 家庭网关</code>；链接字段写法：<code>- title: 名称 | url: 地址 | note: 备注</code>。</p>
-<h3>主题和皮肤</h3>
-<p>右上角“主题”可以配置主题色、背景色、背景图、Logo 和面板透明度。背景色会联动面板、按钮、边框和输入框整体色调；透明度范围为 15%-100%。上传的背景图和 Logo 会持久化到 <code>/www/iptv/assets/</code>。</p>
-<h3>账号密码</h3>
-<p>右上角“账号”用于修改管理页用户名和密码。安装包默认用户名 <code>admin</code>、密码 <code>admin</code>。修改时会校验旧账号和旧密码，即使浏览器保存的旧登录状态过期，也可以通过正确旧密码完成更新。</p>
-<h3>运行时数据与清理</h3>
-<p>运行时目录统一为 <code>/tmp/iptv</code>，可清理临时文件统一放在 <code>/tmp/iptv/trash</code>。清理按钮只删除抓包、分析、候选列表等临时数据，不删除正式节目单、VSP 持久文件、主题素材或编辑历史。</p>
-</div>
-
-<h2 id="spoof">机顶盒伪装</h2>
-<div class="card">
-<p>“IPTV 接口 / 机顶盒伪装”属于高级设置，作用在旁路由的 IPTV 专用入口上，通常对应接光猫 IPTV 口的网口，不是家庭 LAN，也不是普通上网 WAN。</p>
-<p>它用于运营商 IPTV 侧需要识别机顶盒身份的环境，可配置 MAC 克隆、DHCP Hostname、Option 60、Option 61 或 PPPoE 账号密码。普通抓包、VSP 获取、切台补频道不需要频繁改这里。</p>
-<p>改错可能导致 IPTV 侧拿不到地址或盒子无法播放。修改前建议先确认当前网口名称和接线。</p>
-</div>
-
-<h2 id="errors">常见问题与修复</h2>
-<ul>
-<li>USB 口 DOWN：检查 USB 网卡、网线、盒子电源和盒子网口。</li>
-<li>抓不到 IGMP：确认盒子正在播放直播频道，不是停在首页或点播页。</li>
-<li>组播走代理：检查 Nikki/OpenClash 路由规则，239.0.0.0/8 应绕开代理；也可直接点「网络与接口 → 修复被透明代理」一键强制直连。</li>
-<li>Emby 不出图标：本插件已把台标统一指向旁路由本地 <code>/www/iptv/logos/</code>（带 <code>?v=</code> 版本号），插件侧 URL 正常即为真 PNG。Emby 显示坏图基本是<b>缓存了改之前的旧链接</b>——解决：在 Emby 里对该 M3U 调谐器执行「刷新指南数据」，或移除后重新添加 M3U 源；必要时清理 Emby 图片缓存。换源后台标 URL 版本号已变，会强制重新抓取。少数本地台标库没有的频道会无图（非坏图）。</li>
-<li>VSP 很慢：这是逐频道调用 <code>PlayChannel</code> 的正常现象，看右侧进度即可。如果长时间无进度，通常是 JSESSIONID 过期或开机包缺少 VSP 会话。</li>
-<li>只抓到几个频道：通常只是切台时抓到了当前播放/切换过的频道。要完整频道表优先用 VSP；补缺失频道用切台手动抓。</li>
-<li>节目表数量异常：在节目表在线编辑器里读取对应文件，查看“当前节目数量”，必要时从历史版本恢复。</li>
-<li>公网不可用：本工具默认仅内网使用，外部访问入口已移除。</li>
-</ul>
-</div>
+<p>本工具用于已开通的本地运营商 IPTV 服务，不提供公共直播源，也不默认开放公网管理。</p>
+</section>
+</main>
 </body>
 </html>

@@ -1,0 +1,5 @@
+.env
+api-token
+data/
+__pycache__/
+*.pyc

@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 An OpenWrt / HigoOS / ImmortalWrt IPTV gateway manager for home networks where IPTV service has already been provisioned by the local ISP.
 
-It brings the ISP IPTV private network, multicast-to-unicast playback, `udpxy`, playlist generation, local channel logo cache, EPG generation, playback statistics, packet capture, topology diagnostics and common route/proxy repair actions into one web management page.
+It brings the ISP IPTV private network, multicast-to-unicast playback, `udpxy`, playlist generation, local channel logo cache, EPG generation, playback statistics, packet capture, diagnostics and common route/proxy repair actions into one web management page.
 
 > This project does not provide, bundle, sell or recommend public M3U live TV sources. It is only a management tool for IPTV multicast/private-network services that are already enabled on your own broadband line by your local ISP.
 
@@ -23,8 +23,32 @@ OpenWrt IPTV, HigoOS IPTV, ImmortalWrt IPTV, ISP IPTV, IPTV gateway, home IPTV g
 - Maintain a local logo cache under `/www/iptv/logos/` so Emby and players read logos from the router.
 - Generate local EPG files at `/www/epg.xml.gz` and `/www/t.xml.gz`.
 - Extract channel logos from XMLTV/EPG sources that contain `<icon src="...">`.
-- Provide visual status cards, network topology, playback statistics, packet capture, VSP candidates and self-check tools.
+- Provide device status, playback statistics, packet capture, VSP candidates and self-check tools.
 - Provide a Docker edition for UI preview, playlist editing, logo cache and EPG utility scenarios.
+- Optional [NAS-assisted discovery source module](discovery/README.md): bounded sampling, scheduled checks, change review and conservative playlist updates.
+
+## Redesigned Console (Source)
+
+The OpenWrt console now has six task-oriented views: Overview, Channels, Source Discovery, Programme Metadata, Automation and Maintenance. It includes light/dark themes, responsive layouts, searchable channel tables, staged edits and save/read-back checks. Failed saves retain the draft; concurrent-change checks are not an atomic multi-client lock.
+
+Obsolete skin/background controls, inferred topology, blind scans, single-failure source deletion and forced external-toolbox overwrite actions have been removed from the new interface. Compatibility backend endpoints and existing configuration are retained.
+
+**Version boundary:** this branch contains the redesigned console and discovery extension source. Local tests and fixture UI checks have passed, but the console has not been deployed to devices as part of this source update. Existing `1.1.5` packages and the standalone Docker management page remain unchanged; the installation instructions below still refer to those older packages. Real scheduled runs, complete audits, new-source ingestion, DHCP address changes and whole-device recovery still require field acceptance. See [design and verification](docs/design/README.md).
+
+Local preview uses in-memory fixture data only and does not connect to household devices:
+
+```sh
+python3 discovery/console_fixture.py --port 50679
+# http://127.0.0.1:50679/
+```
+
+Validation:
+
+```sh
+python3 -m unittest discover -s discovery -p 'test_*.py'
+node --test scripts/test_playlist_model.cjs
+python3 scripts/check_public_source.py
+```
 
 ## Use Cases
 
