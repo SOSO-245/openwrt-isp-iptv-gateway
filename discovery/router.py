@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from common import atomic_json, packet_endpoints, playlist
-from playlist_update import apply as apply_playlist
+from playlist_update import apply as apply_playlist, archive_review, parse as parse_playlist
 
 CONFIG = Path("/etc/iptv-discovery.json")
 RUNTIME = Path("/tmp/iptv-discovery")
@@ -45,12 +45,14 @@ def config():
     c.setdefault("weekly_time", "03:30")
     c.setdefault("weekdays_only", False)
     c.setdefault("auto_update", False)
+    c.setdefault("auto_archive", False)
     validate_schedule(c)
     return c
 
 
 def validate_schedule(c):
     if (type(c.get("weekly_enabled")) is not bool or type(c.get("auto_update")) is not bool
+            or type(c.get("auto_archive", False)) is not bool
             or type(c.get("weekdays_only", False)) is not bool
             or type(c.get("weekly_day")) is not int or not 0 <= c["weekly_day"] <= 6
             or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", c.get("weekly_time", ""))):
@@ -266,18 +268,49 @@ def schedule_tick(c, now=None):
     atomic_json(STAMP, marks)
 
 
+def recent_updates(backup_root=Path("/etc/iptv-discovery-backups")):
+    """Read committed journals; a later no-op must not hide successful additions."""
+    records = []
+    for path in sorted(backup_root.glob("update-*/manifest.json"), reverse=True)[:50]:
+        try:
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict) or data.get("state") != "applied":
+                continue
+            changes = [{"kind": r["kind"], "name": r["name"]} for r in data.get("changes", [])
+                       if isinstance(r, dict) and r.get("kind") in ("add", "replace", "archive", "restore")
+                       and isinstance(r.get("name"), str)]
+            if changes and type(data.get("at")) in (int, float):
+                records.append({"at": data["at"], "changes": changes[:16]})
+        except (OSError, ValueError, TypeError):
+            continue  # The writer independently blocks on invalid journals.
+        if len(records) == 10:
+            break
+    return sorted(records, key=lambda r: r["at"], reverse=True)
+
+
 def dashboard_status(c):
     try:
         result = nas_request(c, "/v1/status")
     except (OSError, ValueError, http.client.HTTPException):
         result = {"service_error": "NAS扫描服务暂不可用；已有结果可能过期，仅本地计划可读取"}
     defaults = {"weekdays_only": False, "weekly_enabled": False, "weekly_day": 4,
-                "weekly_time": "03:30", "auto_update": False}
+                "weekly_time": "03:30", "auto_update": False, "auto_archive": False}
     result["collector"] = {"enabled": c["enabled"], "daily_time": c["daily_time"],
                            **{k: c.get(k, v) for k, v in defaults.items()}}
     result["collector"]["timezone"] = "Asia/Shanghai"
     result["capture"] = json.loads((RUNTIME / "status.json").read_text()) if (RUNTIME / "status.json").exists() else {"state": "waiting"}
     result["update"] = json.loads((RUNTIME / "update.json").read_text()) if (RUNTIME / "update.json").exists() else {}
+    result["recent_updates"] = recent_updates()
+    if c.get("auto_archive"):
+        try:
+            entries = parse_playlist((WWW / "new.m3u").read_text())[1]
+            check = archive_review(entries, result.get("rows", []), result.get("audit", {}),
+                                   not result.get("service_error") and not result.get("storage_error")
+                                   and result.get("job", {}).get("state") in ("idle", "complete")
+                                   and link_status().get("ready") is True, time.time())
+            result["archive"] = {"state": check["state"], "reason": check["reason"], "eligible_count": len(check["eligible"])}
+        except (OSError, ValueError):
+            result["archive"] = {"state": "blocked", "reason": "节目单读取异常", "eligible_count": 0}
     marks = json.loads(STAMP.read_text()) if STAMP.exists() else {}
     result["scheduled_runs"] = marks.get("runs", {})
     result["next_runs"] = next_runs(c, marks, time.time())
@@ -372,14 +405,17 @@ def reconcile(c):
                 sync_applied(c, previous)
             return
         rows = status.get("rows", [])
-        key = hashlib.sha256(json.dumps(rows, sort_keys=True).encode() + (WWW / "new.m3u").read_bytes()
+        archive_options = {"auto_archive": c.get("auto_archive", False), "audit": status.get("audit", {}),
+                           "link_ready": status.get("job", {}).get("state") in ("idle", "complete")
+                           and link_status().get("ready") is True} if c.get("auto_archive") else {}
+        key = hashlib.sha256(json.dumps([rows, archive_options], sort_keys=True).encode() + (WWW / "new.m3u").read_bytes()
                              + (WWW / "new-logo.m3u").read_bytes()).hexdigest()
         marker = RUNTIME / "update-attempt.json"
         prior = json.loads(marker.read_text()) if marker.exists() else {}
         if prior.get("key") == key and (prior.get("ok") or time.time() - prior.get("at", 0) < 300):
             return
         try:
-            result = apply_playlist(WWW, "/etc/iptv-discovery-backups", rows)
+            result = apply_playlist(WWW, "/etc/iptv-discovery-backups", rows, **archive_options)
         except Exception as exc:
             atomic_json(previous_file, {**previous, "state": "error", "message": str(exc)[:200]})
             atomic_json(marker, {"key": key, "at": time.time(), "ok": False})
@@ -442,7 +478,11 @@ def cgi():
             raise PermissionError("未登录或账号密码错误")
         c = config()
         action = request.get("action", "status")
-        if action == "status":
+        if action in ("ai_status", "ai_preview", "ai_analyze", "ai_settings", "ai_test"):
+            from ai_diagnostics import handle
+            result = handle(action, request, user, lambda: dashboard_status(c), link_status,
+                            secure_transport=os.environ.get("HTTPS", "").lower() in ("on", "1"))
+        elif action == "status":
             result = dashboard_status(c)
         elif action == "sample":
             RUNTIME.mkdir(mode=0o700, exist_ok=True)
@@ -461,13 +501,28 @@ def cgi():
             if type(opts.get("enabled")) is not bool or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", opts.get("daily_time", "")):
                 raise ValueError("定时设置无效")
             validate_schedule(opts)
+            if opts.get("auto_archive") is True and not c.get("auto_archive") and request.get("archive_consent") is not True:
+                raise PermissionError("启用长期失效归档需单独确认")
             result = nas_request(c, "/v1/settings", opts)
             c.update(enabled=opts["enabled"], daily_time=opts["daily_time"])
             c["weekdays_only"] = opts.get("weekdays_only", False)
             c.update({k: opts[k] for k in ("weekly_enabled", "weekly_day", "weekly_time", "auto_update")})
+            c["auto_archive"] = opts.get("auto_archive", c.get("auto_archive", False))
             atomic_json(CONFIG, c)
-        elif action in ("scan", "verify", "audit", "pause", "identify"):
+        elif action in ("scan", "verify", "audit", "pause", "identify", "batch"):
             payload = {"endpoints": request.get("endpoints", []), "retry_failed": request.get("retry_failed") is True}
+            if action == "audit" and "mode" in request:
+                if request["mode"] not in ("new", "resume"):
+                    raise ValueError("全量检查方式无效")
+                status = nas_request(c, "/v1/status")
+                if request["mode"] not in status.get("capabilities", {}).get("audit_modes", []):
+                    raise ValueError("NAS发现服务尚不支持此扫描方式，请先更新服务")
+                payload["mode"] = request["mode"]
+            if action == "batch":
+                status = nas_request(c, "/v1/status")
+                if not status.get("capabilities", {}).get("batch"):
+                    raise ValueError("NAS发现服务需要更新后才能批量处理")
+                payload.update(mode=request.get("mode", "new"), workflow=request.get("workflow", "smart"))
             result = nas_request(c, "/v1/pause", payload) if action == "pause" else submit_check(c, action, payload)
         elif action == "catalog":
             with playlist_guard():

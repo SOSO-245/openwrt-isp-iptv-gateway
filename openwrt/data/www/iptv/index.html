@@ -4,16 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>IPTV 家庭网关</title>
-  <link rel="stylesheet" href="/iptv/console.css?v=3">
-  <link rel="stylesheet" href="/iptv/discovery.css?v=3">
+  <link rel="icon" type="image/png" sizes="32x32" href="/iptv/assets/favicon.png?v=glass1">
+  <link rel="apple-touch-icon" href="/iptv/assets/apple-touch-icon.png?v=glass1">
+  <link rel="stylesheet" href="/iptv/console.css?v=4">
+  <link rel="stylesheet" href="/iptv/discovery.css?v=5">
+  <link rel="stylesheet" href="/iptv/glass.css?v=1">
 </head>
 <body class="iptv-modern">
 <div id="loginLayer" class="login-layer">
   <form class="login-panel" onsubmit="event.preventDefault();login().catch(e=>alert(e.message))">
-    <span data-icon="monitor-play" class="login-mark"></span><h1>IPTV 家庭网关</h1>
+    <img class="login-mark" src="/iptv/assets/iptv-mark.png" width="64" height="64" alt=""><h1>IPTV 家庭网关</h1>
     <label>管理账号<input id="loginUser" autocomplete="username" required></label>
     <label>密码<input id="loginPass" type="password" autocomplete="current-password" required></label>
-    <button class="btn" type="submit">登录</button>
+    <p id="loginMessage" role="alert" hidden></p>
+    <button class="btn" id="loginSubmit" type="submit">登录</button>
   </form>
 </div>
 <dialog id="accountModal" aria-labelledby="accountTitle">
@@ -31,7 +35,7 @@
 </dialog>
 <div class="app-shell">
   <aside class="console-sidebar">
-    <a class="brand" href="#overview"><span data-icon="monitor-play"></span><strong>IPTV<span>家庭网关</span></strong></a>
+    <a class="brand" href="#overview"><img src="/iptv/assets/iptv-mark.png" width="44" height="44" alt=""><strong>IPTV<span>家庭网关</span></strong></a>
     <nav id="tabBar" aria-label="主导航">
       <button class="tab on" data-tab="overview" data-icon="house">总览</button>
       <button class="tab" data-tab="playlist" data-icon="list-video">频道管理</button>
@@ -113,6 +117,12 @@
     <section class="pane" data-tab="maintenance" aria-label="系统维护">
       <div class="section-heading"><h2>健康检查</h2><div class="btns"><button class="btn secondary" onclick="runSelfCheck()" data-icon="shield-check">运行自检</button><button class="btn" onclick="runAnalyze()" data-icon="activity">分析播放异常</button></div></div>
       <dl id="diag" class="data-list diagnostics"></dl>
+      <section class="workspace-section ai-diagnostics" id="aiDiagnostics" aria-labelledby="aiTitle">
+        <div class="section-heading"><h2 id="aiTitle">AI 辅助诊断</h2><span id="aiConfiguration" class="muted" role="status">尚未读取</span><button class="btn secondary" id="aiSettings" data-icon="settings-2">API 设置</button></div>
+        <div class="toolbar"><label>诊断项目<select id="aiIssue"><option value="discovery">源发现与无响应复核</option><option value="playback">播放卡顿</option><option value="signal">频道无信号</option><option value="updates">节目单更新异常</option><option value="health">整体状态检查</option></select></label><button class="btn secondary" id="aiPreview" data-icon="search">预览诊断摘要</button></div>
+        <p id="aiNotice" class="muted" role="status" aria-live="polite"></p>
+        <div id="aiResult" hidden><div class="section-heading"><h3>诊断建议</h3><button class="icon-button" id="aiCopy" data-icon="copy" title="复制建议" aria-label="复制诊断建议"></button></div><p id="aiResultMeta" class="muted"></p><pre id="aiAdvice" class="ai-advice"></pre></div>
+      </section>
       <section class="workspace-section"><div class="section-heading"><h2>运行日志</h2><div class="btns"><button class="icon-button" onclick="loadSharedLog()" data-icon="refresh-cw" title="刷新日志" aria-label="刷新日志"></button><button class="icon-button" onclick="downloadSharedLog()" data-icon="download" title="下载日志" aria-label="下载日志"></button></div></div><pre id="log" class="log">等待系统操作</pre></section>
       <details class="foldout" id="networkTools"><summary>网络与接口<span class="muted">高级</span><span data-icon="chevron-down"></span></summary><div class="foldout-body">
         <p class="warning-note">修改接口或网络配置可能中断 IPTV 播放。</p>
@@ -145,10 +155,12 @@
 </dialog>
 <script src="/iptv/icons.js?v=3"></script>
 <script src="/iptv/control-icons.js?v=3"></script>
-<script src="/iptv/actions.js?v=3"></script>
+<script src="/iptv/actions.js?v=4"></script>
 <script src="/iptv/playlist-model.js?v=3"></script>
 <script src="/iptv/channels.js?v=3"></script>
+<script src="/iptv/ai-diagnostics.js?v=4"></script>
 <script src="/iptv/console.js?v=3"></script>
-<script src="/iptv/discovery.js?v=3"></script>
+<script src="/iptv/discovery-model.js?v=3"></script>
+<script src="/iptv/discovery.js?v=8"></script>
 </body>
 </html>

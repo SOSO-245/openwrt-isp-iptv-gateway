@@ -1373,6 +1373,8 @@ case "$action" in
     fi
     log "已执行 LuCI 菜单/服务缓存修复。" ;;
   auth)
+    body=$(read_body)
+    [ -n "$body" ] && qs="$qs&$body"
     user=$(get user); pass=$(get pass)
     auth_ok "$user" "$pass" && echo "OK" || echo "FAIL" ;;
   change_auth)
@@ -1649,7 +1651,7 @@ LOGOSRC
     iptv_ip=$(current_iptv_ip)
     [ -n "$iptv_ip" ] && echo "[OK] br-iptv 已取得 IPTV 地址 $iptv_ip" || { echo "[✗] br-iptv 未取得 IPTV DHCP 地址 → 点“一键网口/路由修复”（确认 wan(br-iptv) proto=dhcp）"; fail=1; }
     ip route show default 2>/dev/null | grep -q 'dev br-lan' && echo "[OK] 默认路由经 br-lan，未被 IPTV 抢占" || { echo "[✗] 默认路由不在 br-lan → 点“一键网口/路由修复”"; fail=1; }
-    if ip route get 239.21.1.120 2>/dev/null | grep -q nikki; then echo "[✗] 组播被代理(nikki/openclash)拦截 → 点“修复被透明代理”"; fail=1; else echo "[OK] 组播 239.x 直连，未走代理"; fi
+    if ip route get 239.255.0.1 2>/dev/null | grep -q nikki; then echo "[✗] 组播被代理(nikki/openclash)拦截 → 点“修复被透明代理”"; fail=1; else echo "[OK] 组播 239.x 直连，未走代理"; fi
     echo
     echo "===== 二、播放方式（当前模式：$mode）====="
     if pidof udpxy >/dev/null 2>&1 && netstat -lnt 2>/dev/null | grep -q ':12123 '; then
@@ -2840,12 +2842,12 @@ LOGOSRC
     if [ "$proto" = pppoe ]; then [ -n "$user" ] && uci set network.wan.username="$user"; [ -n "$pass" ] && uci set network.wan.password="$pass"; else uci -q delete network.wan.username; uci -q delete network.wan.password; fi
     uci commit network; ifup wan >$ifup_log 2>&1 || true; restart_proxy; cat $ifup_log ;;
   check_no_proxy)
-    log "组播路由检测"; ip route get 239.21.1.120 2>/dev/null || true
-    echo; log "Nikki/OpenClash 代理接口检测"; ip route get 239.21.1.120 2>/dev/null | grep -q nikki && echo "警告：可能走 nikki" || echo "正常：未走 nikki，按路由应从 IPTV 接口处理"
+    log "组播路由检测"; ip route get 239.255.0.1 2>/dev/null || true
+    echo; log "Nikki/OpenClash 代理接口检测"; ip route get 239.255.0.1 2>/dev/null | grep -q nikki && echo "警告：可能走 nikki" || echo "正常：未走 nikki，按路由应从 IPTV 接口处理"
     echo; log "防火墙 IPTV 组播规则计数"; nft list chain inet fw4 input_wan 2>/dev/null | grep -E 'IPTV-Multicast-In|DoS UDP' ;;
   fix_multicast_proxy)
     log "修复组播被透明代理(Nikki/OpenClash)..."
-    echo "修复前：$(ip route get 239.21.1.120 2>/dev/null | head -1)"
+    echo "修复前：$(ip route get 239.255.0.1 2>/dev/null | head -1)"
     if [ -z "$(uci -q get network.iptv_mcast_239)" ]; then
       uci set network.iptv_mcast_239='route' 2>/dev/null || true
       uci set network.iptv_mcast_239.interface='wan' 2>/dev/null || true
@@ -2860,7 +2862,7 @@ LOGOSRC
     done
     ip route flush cache 2>/dev/null || true
     sleep 1
-    after=$(ip route get 239.21.1.120 2>/dev/null | head -1)
+    after=$(ip route get 239.255.0.1 2>/dev/null | head -1)
     echo "修复后：$after"
     if echo "$after" | grep -q nikki; then
       echo "⚠ 仍可能走代理：请在 Nikki/OpenClash 里把 239.0.0.0/8、224.0.0.0/4 加入直连/绕过(bypass)名单。"

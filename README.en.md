@@ -29,11 +29,15 @@ OpenWrt IPTV, HigoOS IPTV, ImmortalWrt IPTV, ISP IPTV, IPTV gateway, home IPTV g
 
 ## Redesigned Console (Source)
 
-The OpenWrt console now has six task-oriented views: Overview, Channels, Source Discovery, Programme Metadata, Automation and Maintenance. It includes light/dark themes, responsive layouts, searchable channel tables, staged edits and save/read-back checks. Failed saves retain the draft; concurrent-change checks are not an atomic multi-client lock.
+**2026-10-27 source update:** This update includes glass themes, batch identification and rechecks, AI settings and connection testing, guarded long-term archiving, and fixes for stream startup deadlines and incomplete media samples. All 192 Python and 25 Node tests passed before publication. This is not a new stable installation package: real automatic additions, source replacement, cross-date archiving/restoration and other field acceptance remain incomplete. It does not establish that every unresponsive channel has been repaired.
+
+The OpenWrt console now has six task-oriented views: Overview, Channels, Source Discovery, Programme Metadata, Automation and Maintenance. It includes light/dark frosted-glass themes, local blue/violet wallpaper and app icons, responsive layouts, searchable channel tables, staged edits and save/read-back checks. Browsers without backdrop blur use solid surfaces. Failed saves retain the draft; concurrent-change checks are not an atomic multi-client lock.
 
 Obsolete skin/background controls, inferred topology, blind scans, single-failure source deletion and forced external-toolbox overwrite actions have been removed from the new interface. Compatibility backend endpoints and existing configuration are retained.
 
-**Version boundary:** this branch contains the redesigned console and discovery extension source. Local tests and fixture UI checks have passed, but the console has not been deployed to devices as part of this source update. Existing `1.1.5` packages and the standalone Docker management page remain unchanged; the installation instructions below still refer to those older packages. Real scheduled runs, complete audits, new-source ingestion, DHCP address changes and whole-device recovery still require field acceptance. See [design and verification](docs/design/README.md).
+Source also includes optional DeepSeek-assisted diagnostics: preview an allowlisted summary, explicitly consent for each request, and receive plain-text advice only. It cannot change devices or run tools. A trial deployment verified configuration and HTTPS access controls; real cloud calls remain unverified. No key or automatic cloud calls are enabled by default. Discovery supports selectable batches, spaced rechecks and explicit new/resume modes. Optional post-audit processing is off by default and cannot bypass naming/evidence checks. Separately enabled long-term archiving requires qualified failures on at least three dates spanning seven days, healthy control channels, and batch limits. Archived playlist entries and ordering information are retained for restoration after successful identity and media rechecks; there is no permanent deletion. The NAS and router maintenance update was trial-deployed and archiving enabled; long-term field acceptance is not complete. The latest extension of the archive evidence window to 09:00 inclusive through 22:00 exclusive (Asia/Shanghai) passed tests and was deployed, with both running versions and retained state verified. Actual long-term archiving and restoration remain pending field acceptance. See the discovery module documentation.
+
+**Version boundary:** this branch contains the redesigned console and discovery extension source. Local tests and fixture UI checks have passed. Static UI assets have also been trial-deployed and checked read-only on one device; this is not complete field acceptance. Existing `1.1.5` packages and the standalone Docker management page remain unchanged; the installation instructions below still refer to those older packages. Real scheduled runs, complete audits, new-source ingestion, DHCP address changes and whole-device recovery still require field acceptance. See [design and verification](docs/design/README.md).
 
 Local preview uses in-memory fixture data only and does not connect to household devices:
 
@@ -46,7 +50,7 @@ Validation:
 
 ```sh
 python3 -m unittest discover -s discovery -p 'test_*.py'
-node --test scripts/test_playlist_model.cjs
+node --test scripts/test_playlist_model.cjs discovery/test_discovery_model.cjs discovery/test_login.cjs
 python3 scripts/check_public_source.py
 ```
 

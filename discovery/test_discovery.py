@@ -173,6 +173,70 @@ class DiscoveryTests(unittest.TestCase):
             connect.return_value.request.assert_called_once_with('GET','/rtp/'+key)
             connect.return_value.close.assert_called_once()
 
+    def test_probe_uses_one_receive_deadline_for_headers_and_body(self):
+        for deep,budget in ((False,4),(True,10)):
+            with self.subTest(deep=deep), patch('server.http.client.HTTPConnection') as connect, \
+                    patch('server.media_details',return_value={'validation':'media'}) as analyze:
+                clock=[0.0];conn=connect.return_value;response=conn.getresponse.return_value
+                response.status=200
+                def advance(value, result=None):
+                    clock[0]=value
+                    return result
+                conn.connect.side_effect=lambda:advance(.25)
+                conn.request.side_effect=lambda *args:advance(.5)
+                conn.getresponse.side_effect=lambda:advance(budget-.25,response)
+                response.read1.side_effect=lambda n:advance(budget+.01,b'data')
+                with patch('server.time.monotonic',side_effect=lambda:clock[0]):
+                    result=self.worker.probe(BASE[0]['endpoint'],deep=deep)
+                self.assertEqual([c.args[0] for c in conn.sock.settimeout.call_args_list],
+                                 [budget-.25,budget-.5,.25])
+                self.assertEqual(response.read1.call_count,1)
+                self.assertEqual(result['validation'],'media')
+                self.assertEqual(result['last_probe']['reason'],'timeout')
+                self.assertEqual(analyze.call_args.args[0],b'data')
+                response.close.assert_called_once();conn.close.assert_called_once()
+
+    def test_probe_transport_errors_do_not_count_as_silent_channels(self):
+        for stage in ('connect','request','headers','body'):
+            with self.subTest(stage=stage), patch('server.http.client.HTTPConnection') as connect:
+                conn=connect.return_value;response=conn.getresponse.return_value;response.status=200
+                target={'connect':conn.connect,'request':conn.request,'headers':conn.getresponse,'body':response.read1}[stage]
+                target.side_effect=ConnectionResetError('sensitive diagnostic must not escape')
+                result=self.worker.probe(BASE[0]['endpoint'])
+                self.assertEqual(result['validation'],'inconclusive')
+                self.assertEqual(result['last_probe']['stage'],stage)
+                self.assertEqual(result['last_probe']['reason'],'transport_error')
+                self.assertNotIn('sensitive',json.dumps(result))
+                self.worker.observe(BASE[0]['endpoint'],result)
+                self.assertEqual(self.worker.state['observations'][BASE[0]['endpoint']]['daytime_failure_checks'],[])
+                conn.close.assert_called_once()
+
+    def test_probe_timeout_classifies_phase_without_resetting_budget(self):
+        for stage in ('connect','request','headers','body'):
+            with self.subTest(stage=stage), patch('server.http.client.HTTPConnection') as connect:
+                conn=connect.return_value;response=conn.getresponse.return_value;response.status=200
+                target={'connect':conn.connect,'request':conn.request,'headers':conn.getresponse,'body':response.read1}[stage]
+                target.side_effect=TimeoutError('private detail')
+                result=self.worker.probe(BASE[0]['endpoint'])
+                self.assertEqual(result['validation'],'no_response' if stage in ('headers','body') else 'inconclusive')
+                self.assertEqual(result['last_probe']['stage'],stage)
+                self.assertEqual(result['last_probe']['bytes_checked'],0)
+                self.assertNotIn('private detail',json.dumps(result))
+
+    def test_latest_probe_metadata_replaces_stale_success_diagnostic(self):
+        key=BASE[0]['endpoint']
+        with patch('server.http.client.HTTPConnection') as connect:
+            connect.return_value.getresponse.side_effect=TimeoutError()
+            failure=self.worker.probe(key)
+        self.worker.observe(key,{'validation':'media','last_probe':{'reason':'byte_limit'}})
+        self.worker.observe(key,failure)
+        item=self.worker.state['observations'][key]
+        self.assertEqual(item['validation'],'media')
+        self.assertEqual(item['last_check'],'no_response')
+        self.assertEqual(item['last_probe']['stage'],'headers')
+        self.worker.observe(key,{'validation':'inconclusive'})
+        self.assertNotIn('last_probe',item)
+
     def test_local_catalog_restricts_metadata(self):
         path=Path(self.tmp.name)/'vsp.m3u'
         self.assertEqual(catalog(path),{'rows':[],'at':0})
@@ -434,6 +498,63 @@ class PlaylistTests(unittest.TestCase):
         for checks in ([],[now-7*3600-i*86400 for i in range(3)],[now-86400,now-86399,now]):
             old['daytime_failure_checks']=checks
             self.assertFalse(plan(base,base,[row,old],now=now)[0])
+
+    def test_replacement_window_collection_and_merge_boundaries(self):
+        base='#EXTM3U\n'+self.entry('CCTV-1','239.10.1.1:8000')
+        logo='#EXTM3U\n'+self.entry('CCTV-1','239.10.1.1:8000',True)
+        for hour,minute,allowed in [(8,59,False),(9,0,True),(17,59,True),
+                                    (18,30,True),(19,0,True),(21,59,True),(22,0,False)]:
+            with self.subTest(hour=hour,minute=minute), tempfile.TemporaryDirectory() as temp:
+                now=dt.datetime(2026,10,28,hour,minute,tzinfo=dt.timezone(dt.timedelta(hours=8))).timestamp()
+                worker=Worker(Path(temp)/'state.json','192.0.2.1')
+                key='239.10.1.1:8000';stamps=[now-2*86400,now-86400,now]
+                for stamp in stamps:
+                    with patch('server.time.time',return_value=stamp):
+                        worker.observe(key,{'validation':'no_response'})
+                old=worker.state['observations'][key]
+                self.assertEqual(old['daytime_failure_checks'],stamps if allowed else [])
+                self.assertFalse(old.get('archive_failure_checks'))
+                row=self.row('CCTV1','239.10.1.2:8000')
+                row.update(success_checks=[now-120,now-1],last_success=now-1)
+                files,changes,pending=plan(base,logo,[row,dict(old,endpoint=key)],now=now)
+                self.assertEqual(bool(files),allowed)
+                self.assertEqual([c['kind'] for c in changes],['replace'] if allowed else [])
+                self.assertEqual(bool(pending),not allowed)
+                if allowed:
+                    self.assertIn('tvg-id="kept"',files['new.m3u'])
+                    self.assertIn('group-title="原分组"',files['new.m3u'])
+                    self.assertIn('tvg-logo="http://router:8080/iptv/logos/cctv.png"',files['new-logo.m3u'])
+                    self.assertEqual(len(parse(files['new.m3u'])[1]),1)
+
+    def test_evening_replacement_preserves_spacing_age_and_identity_guards(self):
+        now=dt.datetime(2026,10,28,19,0,tzinfo=dt.timezone(dt.timedelta(hours=8))).timestamp()
+        key='239.10.1.1:8000';base='#EXTM3U\n'+self.entry('CCTV-1',key)
+        row=self.row('CCTV1','239.10.1.2:8000')
+        row.update(success_checks=[now-120,now-1],last_success=now-1)
+        good=[now-86400,now-86400+3600,now]
+        old={'endpoint':key,'validation':'no_response','last_failure':now,'daytime_failure_checks':good}
+        self.assertEqual(plan(base,base,[row,old],now=now)[1][0]['kind'],'replace')
+        for checks in ([],[now-86400,now-86399,now],[now-7200,now-3600,now],
+                       [now-10*86400,now-9*86400,now-8*86400]):
+            with self.subTest(checks=checks):
+                self.assertFalse(plan(base,base,[row,dict(old,daytime_failure_checks=checks)],now=now)[0])
+        for change in ({'success_checks':[now-1]}, {'protocol':'rtp'}, {'last_check':'no_response'}):
+            with self.subTest(change=change):
+                self.assertFalse(plan(base,base,[dict(row,**change),old],now=now)[0])
+        duplicate=base+self.entry('CCTV1','239.10.1.3:8000')
+        self.assertFalse(plan(duplicate,duplicate,[row,old],now=now)[0])
+        self.assertFalse(plan(base,base,[row,dict(old,validation='media')],now=now)[0])
+
+    def test_evening_failure_streak_resets_after_success_or_uncertainty(self):
+        now=dt.datetime(2026,10,28,19,0,tzinfo=dt.timezone(dt.timedelta(hours=8))).timestamp()
+        for result in ('media','inconclusive','no_media'):
+            with self.subTest(result=result), tempfile.TemporaryDirectory() as temp:
+                worker=Worker(Path(temp)/'state.json','192.0.2.1');key='239.10.1.1:8000'
+                for stamp in (now-86400,now-82800,now):
+                    with patch('server.time.time',return_value=stamp):worker.observe(key,{'validation':'no_response'})
+                self.assertEqual(len(worker.state['observations'][key]['daytime_failure_checks']),3)
+                with patch('server.time.time',return_value=now+1):worker.observe(key,{'validation':result})
+                self.assertEqual(worker.state['observations'][key]['daytime_failure_checks'],[])
 
     def test_stale_and_changed_success_evidence_refuses(self):
         row=self.row('新频道','239.10.1.2:8000')

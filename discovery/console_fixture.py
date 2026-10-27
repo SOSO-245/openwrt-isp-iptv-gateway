@@ -29,7 +29,8 @@ class ConsoleFixture(Fixture):
         path = urlsplit(self.path).path
         if path in ("/", "/iptv/", "/iptv/index.html"):
             page = (ASSETS / "index.html").read_text()
-            page = page.replace("<body class=", '<script>sessionStorage.iptvAuthed="1";</script><body class=', 1)
+            if not self.server.login_fixture:
+                page = page.replace("<body class=", '<script>sessionStorage.iptvAuthed="1";</script><body class=', 1)
             page = page.replace('<footer class="console-footer">', '<footer class="console-footer"><b>本地样例 · 不连接生产设备</b>')
             self.send(page.encode(), "text/html")
         elif path == "/cgi-bin/iptv-status":
@@ -86,7 +87,9 @@ class ConsoleFixture(Fixture):
         elif action in ("get_ui_log", "get_capture_ui_log"):
             result = "本地样例：没有执行生产操作。"
         elif action == "auth":
-            result = "OK"
+            fields = parse_qs(body)
+            result = "OK" if (not self.server.login_fixture or
+                               (fields.get("user") == ["demo"] and fields.get("pass") == ["demo-only-pass"])) else "FAIL"
         elif action in ("save_epg_config", "save_config", "save_ui_log", "save_capture_ui_log", "self_check", "analyze_playback"):
             self.server.writes.append(action)
             result = "本地样例：操作已记录，未连接设备。"
@@ -95,7 +98,7 @@ class ConsoleFixture(Fixture):
         self.send(result.encode(), "text/plain")
 
 
-def make_server(temp, port=0, offline=False, fail_save=False):
+def make_server(temp, port=0, offline=False, fail_save=False, ai_configured=False, ai_fail=False, login_fixture=False):
     worker = Worker(Path(temp)/"state.json", "192.0.2.1")
     worker.state["baseline"] = parse_playlist(playlist())
     for suffix in (250, 251):
@@ -107,6 +110,9 @@ def make_server(temp, port=0, offline=False, fail_save=False):
         item["success_fingerprint"] = media_fingerprint(endpoint, item)
         worker.state["observations"][endpoint] = item
     worker.state["observations"]["239.255.42.1:8000"] = {"validation": "media", "last_check": "no_response", "checked_at": time.time(), "protocol": "rtp"}
+    worker.state["observations"]["239.255.42.249:8000"] = {"validation":"no_response","checked_at":time.time(),"last_seen":time.time()}
+    worker.state["audit"] = {"state":"paused","done":12,"total":36,"started":time.time()-3600,
+                             "targets":[r["endpoint"] for r in worker.state["baseline"]],"counts":{"media":10,"no_response":2},"message":"检测到播放，已保留进度"}
     worker.state["history"] = [{"kind": "sample", "at": time.time()-900, "state": "complete", "observed": 3},
                                {"kind": "verify", "at": time.time()-1800, "state": "complete"},
                                {"kind": "audit", "at": time.time()-3600, "state": "paused", "message": "检测到播放，已保留进度"}]
@@ -116,9 +122,17 @@ def make_server(temp, port=0, offline=False, fail_save=False):
     server.outage_cycle = server.sync_cycle = False
     server.status_reads = server.sync_reads = 0
     server.fail_save = fail_save
+    server.login_fixture = login_fixture
     server.playlists = {key: playlist() for key in ("new.m3u", "new-logo.m3u", "vsp.m3u")}
     server.history, server.writes = {}, []
     server.collector_override = {}
+    server.ai_runtime = Path(temp) / "ai-runtime"
+    server.ai_config_path = Path(temp) / "ai.json"
+    server.ai_fail = ai_fail
+    if ai_configured:
+        from common import atomic_json
+        from ai_diagnostics import BASE_URL, MODEL
+        atomic_json(server.ai_config_path, {"base_url": BASE_URL, "model": MODEL, "api_key": "fixture-only-not-a-real-key"})
     return server
 
 
@@ -127,9 +141,14 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--fail-save", action="store_true")
+    parser.add_argument("--ai-configured", action="store_true", help="Simulate AI locally without cloud calls")
+    parser.add_argument("--ai-fail", action="store_true", help="Simulate an AI timeout")
+    parser.add_argument("--ai-secure-fixture", action="store_true", help="Simulate TLS state on loopback using dummy keys only")
+    parser.add_argument("--login-fixture", action="store_true", help="Require dummy demo / demo-only-pass login locally")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="iptv-console-") as temp:
-        server = make_server(temp, args.port, args.offline, args.fail_save)
+        server = make_server(temp, args.port, args.offline, args.fail_save, args.ai_configured, args.ai_fail, args.login_fixture)
+        server.ai_secure_fixture = args.ai_secure_fixture
         print(f"Local console preview: http://127.0.0.1:{server.server_port}", flush=True)
         try:
             server.serve_forever()

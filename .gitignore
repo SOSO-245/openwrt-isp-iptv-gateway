@@ -12,6 +12,7 @@ dist/selfuse/
 *.local
 docs/design/*concept.png
 **/api-token
+**/iptv-ai.json
 **/state.json
 **/backup-*/
 **/release-acceptance.local.json

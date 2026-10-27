@@ -53,6 +53,41 @@ class RecoveryTests(unittest.TestCase):
         finally:
             self.worker.job_lock.release()
 
+    def test_explicit_new_audit_restarts_without_clearing_evidence(self):
+        self.prepare_audit()
+        self.worker.state['observations']['239.255.42.3:8000'] = {'validation': 'no_response'}
+        before = copy.deepcopy(self.worker.state['observations'])
+        with patch('server.threading.Thread') as thread:
+            self.worker.start('audit', {'mode': 'new'})
+        try:
+            self.assertEqual(self.worker.job['done'], 0)
+            self.assertEqual(self.worker.state['observations'], before)
+            self.assertEqual(thread.call_args.kwargs['args'][1], ['239.255.42.1:8000', '239.255.42.3:8000'])
+            self.assertEqual(self.worker.state['audit']['trigger'], 'manual')
+            self.assertEqual(self.worker.state['audit']['previous']['done'], 1)
+        finally:
+            self.worker.job_lock.release()
+
+    def test_explicit_resume_does_not_silently_start_new_scan(self):
+        with patch('server.threading.Thread') as thread:
+            with self.assertRaisesRegex(ValueError, '没有可继续'):
+                self.worker.start('audit', {'mode': 'resume'})
+            thread.assert_not_called()
+        self.assertFalse(self.worker.job_lock.locked())
+        self.prepare_audit()
+        with patch('server.threading.Thread'):
+            self.worker.start('audit', {'mode': 'resume'})
+        self.assertEqual(self.worker.job['done'], 1)
+        self.worker.job_lock.release()
+
+    def test_invalid_audit_mode_leaves_saved_progress(self):
+        self.prepare_audit()
+        before = copy.deepcopy(self.worker.state)
+        with self.assertRaises(ValueError):
+            self.worker.start('audit', {'mode': 'delete'})
+        self.assertEqual(self.worker.state, before)
+        self.assertFalse(self.worker.job_lock.locked())
+
     def test_disk_full_does_not_acknowledge_name_confirmation(self):
         key = '239.255.42.2:8000'
         self.worker.observe(key, {'validation': 'media', 'protocol': 'udp', 'programs': [],

@@ -114,13 +114,13 @@ def confirmed_name(key, item):
     return ""
 
 
-def recent_checks(values, now, spacing=60, daytime=False):
+def recent_checks(values, now, spacing=60, daytime=False, max_age=7 * 86400, daytime_end=18):
     """Only dated, spaced evidence can authorize automatic playlist changes."""
     if not isinstance(values, list):
         return []
     checks = []
-    for stamp in sorted({v for v in values if type(v) in (int, float) and 0 <= now - v <= 7 * 86400}):
-        if daytime and not 9 <= dt.datetime.fromtimestamp(stamp, dt.timezone(dt.timedelta(hours=8))).hour < 18:
+    for stamp in sorted({v for v in values if type(v) in (int, float) and 0 <= now - v <= max_age}):
+        if daytime and not 9 <= dt.datetime.fromtimestamp(stamp, dt.timezone(dt.timedelta(hours=8))).hour < daytime_end:
             continue
         if not checks or stamp - checks[-1] >= spacing:
             checks.append(stamp)

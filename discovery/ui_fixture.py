@@ -23,7 +23,7 @@ header h1{font-size:20px}header label{margin-left:auto}header input{width:auto}h
 </style><body class="iptv-modern"><main><header><h1>自动发现</h1><small>仅本地样例，不连接路由器或 NAS</small>
 <label><input id="dark" type="checkbox">深色</label></header><section class="pane on" data-tab="capture"></section></main>
 <script>sessionStorage.iptvAuthed='1';document.querySelector('#dark').addEventListener('change',e=>document.body.classList.toggle('iptv-dark',e.target.checked));</script>
-<script src="/icons.js"></script><script src="/console.js"></script><script src="/discovery.js"></script></body></html>"""
+<script src="/icons.js"></script><script src="/console.js"></script><script src="/discovery-model.js"></script><script src="/discovery.js"></script></body></html>"""
 
 
 class Fixture(BaseHTTPRequestHandler):
@@ -41,7 +41,7 @@ class Fixture(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self.send(PAGE.encode(), "text/html")
-        elif self.path[1:] in {"console.css", "discovery.css", "icons.js", "console.js", "discovery.js"}:
+        elif self.path[1:] in {"console.css", "discovery.css", "icons.js", "console.js", "discovery-model.js", "discovery.js"}:
             path = ASSETS / self.path[1:]
             self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0])
         else:
@@ -56,7 +56,21 @@ class Fixture(BaseHTTPRequestHandler):
                 raise ValueError("Invalid request")
             data = json.loads(self.rfile.read(size))
             worker = self.server.worker
-            if data.get("action") == "status":
+            if data.get("action") in ("ai_status", "ai_preview", "ai_analyze", "ai_settings", "ai_test") and hasattr(self.server, "ai_runtime"):
+                import ai_diagnostics
+                from unittest.mock import patch
+                kwargs = ({"side_effect": ValueError("本地样例：AI 请求超时，未自动重试")} if self.server.ai_fail else
+                          {"return_value": {"advice": "本地模拟回复，未联系云端。\n已确认：入口就绪，存在近期无响应记录。\n证据不足：当前快照不能证明卡顿根因。\n建议：先核对实际播放现象，不自动重启或删除频道。", "truncated": False}})
+                connection_result = ({"ok": False, "code": "timeout", "message": "本地模拟：连接测试超时"} if self.server.ai_fail else
+                                     {"ok": True, "code": "connected", "message": "本地模拟：认证和模型列表正常", "latency_ms": 36})
+                with patch("ai_diagnostics.ask_cloud", **kwargs), patch("ai_diagnostics.test_connection", return_value=connection_result):
+                    result = ai_diagnostics.handle(data["action"], data, "fixture", lambda: (
+                        {"service_error": "offline"} if self.server.offline else worker.status()),
+                        lambda: {"ready": True}, self.server.ai_config_path, self.server.ai_runtime,
+                        secure_transport=getattr(self.server, "ai_secure_fixture", False))
+                if data["action"] == "ai_analyze":
+                    self.server.writes.append("ai_analyze_simulated")
+            elif data.get("action") == "status":
                 offline = self.server.offline
                 if self.server.outage_cycle:
                     offline = self.server.status_reads == 1
@@ -66,6 +80,8 @@ class Fixture(BaseHTTPRequestHandler):
                 result["collector"] = {"enabled": True, "daily_time": "09:30", "weekdays_only": True,
                                        "weekly_enabled": True, "weekly_day": 4, "weekly_time": "09:30", "auto_update": False}
                 result["collector"].update(getattr(self.server, "collector_override", {}))
+                result["recent_updates"] = getattr(self.server, "recent_updates", [])
+                result["archive"] = getattr(self.server, "archive_status", {})
                 result["next_runs"] = next_runs(result["collector"], {}, time.time())
                 result["scheduled_runs"] = {
                     "sample": {"at": time.time()-3600, "state": "error", "message": "NAS通信失败，本次计划未完成；恢复后可手动执行"},
@@ -75,20 +91,28 @@ class Fixture(BaseHTTPRequestHandler):
                     result["update"] = {"state": "applied", "sync_pending": self.server.sync_reads == 0,
                                         "last_applied": {"at": time.time()-600, "changes": [{"kind": "add"}]}}
                     self.server.sync_reads += 1
-            elif data.get("action") == "verify" and data.get("retry_failed") is True:
+            elif data.get("action") in ("verify", "audit", "batch"):
                 from unittest.mock import patch
                 # Exercise target selection, without starting network work.
                 with patch("server.threading.Thread") as thread:
-                    worker.start("verify", data)
+                    worker.start(data["action"], data)
                     targets = thread.call_args.kwargs["args"][1]
                 worker.job_lock.release()
+                if data["action"] in ("audit", "batch"):
+                    worker.state[data["action"]].update(state="paused", message="本地模拟暂停，未真实取流")
+                    worker.save()
                 worker.job = {"state": "idle"}
+                if hasattr(self.server,"writes"):
+                    self.server.writes.append({"action":data["action"],"mode":data.get("mode"),"targets":len(targets)})
                 result = {"message": f"本地样例：已选 {len(targets)} 项，未取流或改写节目单"}
             elif data.get("action") == "name":
                 result = worker.confirm_name(data)
             elif data.get("action") == "settings" and hasattr(self.server, "collector_override"):
                 if self.server.offline:
                     raise ValueError("本地样例：NAS 离线")
+                if (data["settings"].get("auto_archive") and not self.server.collector_override.get("auto_archive")
+                        and data.get("archive_consent") is not True):
+                    raise ValueError("启用长期失效归档需单独确认")
                 worker.settings(data["settings"])
                 self.server.collector_override.update(data["settings"])
                 self.server.writes.append("discovery_settings")
@@ -96,7 +120,7 @@ class Fixture(BaseHTTPRequestHandler):
             else:
                 raise ValueError("本地样例不执行采样、扫描、计划或节目单写入")
             self.send(json.dumps(result, ensure_ascii=False).encode())
-        except (ValueError, TypeError, KeyError) as exc:
+        except (ValueError, TypeError, KeyError, PermissionError) as exc:
             self.send(json.dumps({"error": str(exc)}, ensure_ascii=False).encode(), code=400)
 
 

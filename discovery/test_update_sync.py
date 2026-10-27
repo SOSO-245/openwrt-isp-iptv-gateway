@@ -34,6 +34,22 @@ class UpdateSyncTests(unittest.TestCase):
     def update(self):
         return json.loads((self.runtime / 'update.json').read_text())
 
+    def test_recent_updates_only_shows_committed_journals_without_private_fields(self):
+        backups = self.root / 'backups'
+        for index, state in enumerate(('applied', 'rolled_back', 'prepared', 'applied')):
+            folder = backups / f'update-{index:03}'
+            folder.mkdir(parents=True)
+            (folder / 'manifest.json').write_text(json.dumps({'at': index, 'state': state,
+                'changes': [{'kind': 'add', 'name': 'Example', 'after': 'PRIVATE-ENDPOINT'}],
+                'private': 'PRIVATE'}))
+        broken = backups / 'update-999'
+        broken.mkdir()
+        (broken / 'manifest.json').write_text('invalid')
+        rows = router.recent_updates(backups)
+        self.assertEqual([r['at'] for r in rows], [3, 0])
+        self.assertNotIn('PRIVATE', json.dumps(rows))
+        self.assertEqual(router.recent_updates(self.root / 'absent'), [])
+
     def apply(self, *_):
         for name in ('new.m3u', 'new-logo.m3u'):
             (self.www / name).write_text('#EXTM3U\nupdated playlist\n')

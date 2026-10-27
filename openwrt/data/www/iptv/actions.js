@@ -2,7 +2,35 @@
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function authParams(){return '&auth_user='+encodeURIComponent(sessionStorage.iptvUser||'')+'&auth_pass='+encodeURIComponent(sessionStorage.iptvPass||'')}
-async function login(){const user=$('loginUser').value,pass=$('loginPass').value;const p=new URLSearchParams({action:'auth',user,pass});const r=await fetch('/cgi-bin/iptv-action?'+p.toString(),{method:'POST'});const t=(await r.text()).trim();if(t==='OK'){sessionStorage.iptvAuthed='1';sessionStorage.iptvUser=user;sessionStorage.iptvPass=pass;$('loginLayer').style.display='none';window.iptvStart()}else alert('账号或密码错误')}
+let loginPending=false;
+function loginMessage(message){const box=$('loginMessage');if(box){box.textContent=message;box.hidden=!message}else if(message)alert(message)}
+async function login(){
+  if(loginPending)return false;
+  const user=$('loginUser').value.trim(),pass=$('loginPass').value;
+  if(!user||!pass){loginMessage('请输入 IPTV 管理账号和密码');return false}
+  const button=$('loginSubmit'),controller=new AbortController();
+  loginPending=true;loginMessage('');if(button){button.disabled=true;button.textContent='登录中…'}
+  const timer=setTimeout(()=>controller.abort(),10000);
+  try{
+    const r=await fetch('/cgi-bin/iptv-action?action=auth',{
+      method:'POST',cache:'no-store',redirect:'error',signal:controller.signal,
+      headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+      body:new URLSearchParams({user,pass}).toString()
+    });
+    if(!r.ok){loginMessage('登录服务暂不可用（HTTP '+r.status+'），不代表密码错误');return false}
+    const result=(await r.text()).trim();
+    if(result==='FAIL'){loginMessage('IPTV 管理账号或密码不正确，请使用原 IPTV 管理页的账号密码');return false}
+    if(result!=='OK'){loginMessage('登录接口返回异常，请刷新后重试；尚未确认账号密码');return false}
+    try{
+      sessionStorage.iptvUser=user;sessionStorage.iptvPass=pass;sessionStorage.iptvAuthed='1';
+    }catch(e){loginMessage('账号已验证，但浏览器无法保存本页登录状态，请允许网站存储后重试');return false}
+    $('loginPass').value='';$('loginLayer').style.display='none';window.iptvStart();return true;
+  }catch(e){
+    loginMessage(e.name==='AbortError'?'登录请求超时，请检查连接后重试；未判定为密码错误':'无法连接登录服务，请检查 HTTPS 连接后重试；未判定为密码错误');return false;
+  }finally{
+    clearTimeout(timer);loginPending=false;if(button){button.disabled=false;button.textContent='登录'}
+  }
+}
 function requireLogin(){if(sessionStorage.iptvAuthed==='1')$('loginLayer').style.display='none'}
 async function saveAccount(){const olduser=$('oldUser').value.trim(),oldpass=$('oldPass').value,user=$('newUser').value.trim(),pass=$('newPass').value,pass2=$('newPass2').value;if(!olduser||!oldpass||!user||!pass){alert('账号和密码不能为空');return}if(user.includes(':')||pass.includes(':')){alert('账号和密码不能包含冒号 :');return}if(pass!==pass2){alert('两次新密码不一致');return}const p=new URLSearchParams({olduser,oldpass,user,pass});$('log').textContent='保存账号中...';const r=await fetch('/cgi-bin/iptv-action?action=change_auth',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:p.toString()});const txt=await r.text();$('log').textContent=txt;if(txt.includes('已更新')){sessionStorage.iptvUser=user;sessionStorage.iptvPass=pass;sessionStorage.iptvAuthed='1';$('loginUser').value=user;$('loginPass').value=pass;toggleAccount(false);alert('账号密码已保存')}}
 function parseYamlConfig(text){const cfg={links:[]};for(const raw of String(text||'').split(/\n/)){const line=raw.trim();if(!line||line.startsWith('#'))continue;if(line.startsWith('- ')){const item={};for(const part of line.slice(2).split('|')){const m=part.trim().match(/^([^:]+):\s*(.*)$/);if(m)item[m[1].trim()]=m[2].trim()}if(item.title||item.url)cfg.links.push(item);continue}const m=line.match(/^([^:]+):\s*(.*)$/);if(m){const key=m[1].trim();if(key!=='links')cfg[key]=m[2].trim()}}return cfg}

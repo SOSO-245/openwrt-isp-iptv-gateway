@@ -4,8 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>IPTV 家庭网关 · 使用说明</title>
-<link rel="icon" type="image/svg+xml" href="/iptv/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/iptv/assets/favicon.png?v=glass1">
+<link rel="apple-touch-icon" href="/iptv/assets/apple-touch-icon.png?v=glass1">
 <link rel="stylesheet" href="/iptv/console.css?v=3">
+<link rel="stylesheet" href="/iptv/glass.css?v=1">
 <style>
 .guide{max-width:880px;margin:0 auto;padding:32px 24px 64px}.guide header{display:flex;justify-content:space-between;align-items:center;gap:20px;border-bottom:1px solid var(--line);padding-bottom:24px}.guide h1{font-size:22px}.guide h2{margin:32px 0 14px}.guide h3{font-size:14px;margin:20px 0 10px}.guide p,.guide li{line-height:1.9;color:var(--muted)}.guide nav{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}.guide code{font:12px/1.7 ui-monospace,monospace;background:var(--panel2);padding:2px 5px;overflow-wrap:anywhere}.guide li{margin:8px 0}.guide ul,.guide ol{padding-left:24px}.guide table{font-size:13px}.guide th{width:100px}.guide section{border-bottom:1px solid var(--line);padding-bottom:20px}.guide .note{border-left:2px solid var(--warn);padding-left:14px}@media(max-width:400px){.guide{padding:20px 16px}.guide header{align-items:flex-start}.guide h1{font-size:19px}}
 </style>
@@ -54,7 +56,8 @@
 <h2>自动任务</h2>
 <p>短采样、周全量和 EPG 更新分别配置。页面显示下次时间与最近执行结果；“已提交”不代表完整检查已完成。采用北京时间，工作日选项按周一至周五计算，不自动处理法定假期和调休。</p>
 <p>短采样与周全量在同一分钟重合时，由全量替代短采样。全量只在观察心跳有效且未检测到播放时继续下一条取流，仍有每轮预算，不持续压满网络。</p>
-<p>自动更新仅接纳已明确名称、单节目且重复验证通过的新源；同名换址还要求旧源满足多次白天失败和时间跨度条件。不自动删除频道，尽量保留排序、台标和元数据。</p>
+<p>自动更新仅接纳已明确名称、单节目且重复验证通过的新源；同名换址还要求旧源最近七天内至少三次在北京时间09:00（含）至22:00（不含）无响应，间隔至少一小时、跨度至少24小时，最新检查仍无响应。新候选短样本有名称也会深度识别、间隔复核。最近成功的新增、换源、归档与恢复记录会保留显示。</p>
+<p>“长期失效自动归档”默认关闭，单独确认后开启。至少3个不同日期在北京时间09:00（含）至22:00（不含）的完整检查无响应、跨度至少7天，且每轮有正常节目对照；大面积无响应、入口异常、未完成检查不会归档。每轮最多5条且不超过5%（小节目单最低1条）。归档移出正式列表但保留原名称、台标、排序和备份；恢复信号和身份、通过两次验证后自动恢复，不永久删除资料。每周检查一次时通常至少跨两周才能满足3次记录。</p>
 <p class="note">本地节目单已更新但 NAS 未确认时，显示“NAS 待同步”，后续仅补同步。未完成更新清单会阻止再次合并，需核对备份与当前文件，不通过清空状态掩盖问题。</p>
 </section>
 <section id="maintenance">
@@ -66,7 +69,7 @@
 <p>开机包、切台抓取及 VSP 获取仅供需要运营商会话的环境按需使用。可能包含 Cookie、会话标识等敏感数据，抓包与日志不得公开上传。HTTPS 或私有协议不保证能解析。</p>
 <p>VSP 候选单独保存。合并前核对内容；候选表可能过期。无机顶盒的自动发现流程不依赖这些工具。</p>
 <h3>账号、外观与日志</h3>
-<p>右上角保留账号管理和深浅色切换。新安装需更改默认账号。复杂主题、背景上传、透明度和重复拓扑展示已移除；旧素材不自动删除。订阅地址配置收纳在系统维护底部。</p>
+<p>右上角保留账号管理和深浅色切换。新安装需更改默认账号。当前采用配套玻璃主题；复杂主题编辑、背景上传、透明度调节和重复拓扑展示已移除，旧素材不自动删除。订阅地址配置收纳在系统维护底部。</p>
 <p>日志来自旁路由服务端，便于跨设备核对。临时日志和抓包不能替代备份；不要在排障未完成时随意清理证据。</p>
 </section>
 <section id="troubleshooting">

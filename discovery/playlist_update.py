@@ -1,5 +1,7 @@
 """Conservative playlist merge: local files only, no network or shell commands."""
 import hashlib
+import datetime as dt
+import ipaddress
 import json
 import os
 import re
@@ -13,6 +15,65 @@ from common import channel_name, confirmed_name, playlist, recent_checks, split_
 
 
 PLAYLISTS = ("new.m3u", "new-logo.m3u", "new.txt")
+DAY = 86400
+SHANGHAI = dt.timezone(dt.timedelta(hours=8))
+
+
+def archive_review(entries, observations, audit, link_ready, now):
+    """Fail closed: a widespread outage is never evidence for mass retirement."""
+    def blocked(reason):
+        return {"state": "blocked", "reason": reason, "eligible": []}
+    if link_ready is not True:
+        return blocked("IPTV入口未确认正常")
+    if (audit.get("state") != "complete" or not audit.get("total")
+            or audit.get("done") != audit.get("total")
+            or not 0 <= now - audit.get("finished", 0) <= DAY):
+        return blocked("等待24小时内完整全量检查")
+    keys = {e.get("endpoint") for e in entries}
+    if not keys or None in keys or len(keys) != len(entries):
+        return blocked("存在非组播或重复地址条目，归档需核对")
+    rows = {r["endpoint"]: r for r in observations}
+    if any(k not in rows or not 0 <= now - rows[k].get("checked_at", 0) <= DAY for k in keys):
+        return blocked("正式节目检查覆盖不足或已过期")
+    checks = {k: rows[k].get("last_check") or rows[k].get("validation") for k in keys}
+    if any(s not in ("media", "no_response") for s in checks.values()):
+        return blocked("正式节目仍有未确定结果")
+    failed = [k for k in keys if checks[k] == "no_response"]
+    if len(failed) / len(keys) > 0.20 or sum(s == "media" for s in checks.values()) < 2:
+        return blocked("正式节目异常超过20%或正常对照不足")
+    eligible_keys = []
+    for key in sorted(failed):
+        row = rows[key]
+        group, port = split_endpoint(key)
+        subnet = ipaddress.ip_network(group + "/24", strict=False)
+        if not any(checks[k] == "media" and split_endpoint(k)[1] == port
+                   and ipaddress.ip_address(split_endpoint(k)[0]) in subnet for k in keys):
+            continue
+        stamps = recent_checks(row.get("archive_failure_checks", []), now, spacing=3600,
+                               daytime=True, max_age=30 * DAY, daytime_end=22)
+        dates = {dt.datetime.fromtimestamp(s, SHANGHAI).date() for s in stamps}
+        if (len(dates) >= 3 and stamps[-1] - stamps[0] >= 7 * DAY
+                and 0 <= now - stamps[-1] <= DAY
+                and row.get("last_success", 0) < stamps[0]):
+            eligible_keys.append(key)
+    if len(eligible_keys) > min(5, max(1, len(keys) // 20)):
+        return blocked("待归档超过单轮5条或5%上限，保留节目等待核对")
+    return {"state": "ready" if eligible_keys else "waiting", "eligible": eligible_keys,
+            "reason": "已满足长期失效归档条件" if eligible_keys else "等待跨7天、3个不同日期09:00–22:00完整检查的无响应证据"}
+
+
+def archived_entries(backup_root):
+    records = {}
+    journals = [json.loads(path.read_text()) for path in backup_root.glob("update-*/manifest.json")]
+    for data in sorted(journals, key=lambda r: (r.get("at", 0), r.get("sequence", 0))):
+        if data.get("state") != "applied":
+            continue
+        for change in data.get("changes", []):
+            if change.get("kind") == "archive":
+                records[change["before"]] = change
+            elif change.get("after"):
+                records.pop(change["after"], None)
+    return records
 
 
 def identity(name):
@@ -86,13 +147,16 @@ def eligible(row, now):
     return name
 
 
-def plan(base_text, logo_text, observations, now=None, vsp_endpoints=(), logos=None):
+def plan(base_text, logo_text, observations, now=None, vsp_endpoints=(), logos=None,
+         auto_archive=False, audit=None, link_ready=False, archived=None):
     now = time.time() if now is None else now
     header, entries = parse(base_text)
     logo_header, logo_entries = parse(logo_text)
     # Do not overwrite a user's independent edits to one version of the list.
     if [(e["name"], e["url"]) for e in entries] != [(e["name"], e["url"]) for e in logo_entries]:
         raise ValueError("基础版与台标版条目不一致，等待人工核对")
+    original_entries, original_logos = list(entries), list(logo_entries)
+    archive = archive_review(entries, observations, audit or {}, link_ready, now) if auto_archive else None
     obs = {r["endpoint"]: r for r in observations}
     changes, pending = [], []
     source = next((urlsplit(e["url"]) for e in entries if e["endpoint"]), None)
@@ -119,16 +183,32 @@ def plan(base_text, logo_text, observations, now=None, vsp_endpoints=(), logos=N
             old_key = entries[index]["endpoint"]
             old = obs.get(old_key, {})
             failed = old.get("last_check", old.get("validation"))
-            checks = recent_checks(old.get("daytime_failure_checks", []), now, spacing=3600, daytime=True)
+            checks = recent_checks(old.get("daytime_failure_checks", []), now, spacing=3600,
+                                   daytime=True, daytime_end=22)
             if not (failed == "no_response" and len(checks) >= 3 and checks[-1] - checks[0] >= 86400
                     and 0 <= now - old.get("last_failure", 0) <= 7 * 86400):
-                pending.append({"endpoint": key, "name": name, "reason": "原源缺少三次白天无响应复核（跨度至少24小时），保留原频道"})
+                pending.append({"endpoint": key, "name": name, "reason": "原源缺少三次09:00–22:00无响应复核（跨度至少24小时），保留原频道"})
                 continue
             for group in (entries, logo_entries):
                 group[index]["lines"][-1] = url
                 group[index].update(url=url, endpoint=key)
             changes.append({"kind": "replace", "name": entries[index]["name"], "before": old_key, "after": key})
         else:
+            saved = (archived or {}).get(key)
+            if saved:
+                if identity(saved["name"]) != identity(name):
+                    pending.append({"endpoint": key, "name": name, "reason": "恢复信号与归档名称不同，等待核对"})
+                    continue
+                positions = {e["endpoint"]: i for i, e in enumerate(entries)}
+                following = next((k for k in saved.get("following", []) if k in positions), None)
+                preceding = next((k for k in reversed(saved.get("preceding", [])) if k in positions), None)
+                index = (positions[following] if following else positions[preceding] + 1 if preceding
+                         else min(saved["index"], len(entries)))
+                for group, field in ((entries, "entry"), (logo_entries, "logo_entry")):
+                    lines = list(saved[field]); lines[-1] = url
+                    group.insert(index, {"name": saved["name"], "url": url, "endpoint": key, "lines": lines})
+                changes.append({"kind": "restore", "name": saved["name"], "before": None, "after": key})
+                continue
             channel_id = re.sub(r"[\s-]", "", name)
             meta = f'#EXTINF:-1 tvg-id="{channel_id}" tvg-name="{name}"'
             logo = (logos or {}).get(identity(name), "")
@@ -147,6 +227,21 @@ def plan(base_text, logo_text, observations, now=None, vsp_endpoints=(), logos=N
             entries.insert(index, entry)
             logo_entries.insert(index, logo_entry)
             changes.append({"kind": "add", "name": name, "before": None, "after": key})
+    if archive:
+        if archive["state"] == "blocked":
+            pending.append({"reason": "自动归档保护：" + archive["reason"]})
+        for key in archive["eligible"]:
+            # A successful replacement wins over archival of its former address.
+            index = next((i for i, e in enumerate(entries) if e["endpoint"] == key), None)
+            if index is None:
+                continue
+            original_index = next(i for i, e in enumerate(original_entries) if e["endpoint"] == key)
+            changes.append({"kind": "archive", "name": entries[index]["name"], "before": key, "after": None,
+                            "index": original_index, "entry": list(original_entries[original_index]["lines"]),
+                            "logo_entry": list(original_logos[original_index]["lines"]),
+                            "preceding": [e["endpoint"] for e in original_entries[:original_index]],
+                            "following": [e["endpoint"] for e in original_entries[original_index + 1:]]})
+            entries.pop(index); logo_entries.pop(index)
     if not changes:
         return {}, [], pending
     if len(changes) > 16:
@@ -233,7 +328,7 @@ def rollback(www, old, new, attempted):
     return conflicts, failures
 
 
-def apply(www, backup_root, rows):
+def apply(www, backup_root, rows, auto_archive=False, audit=None, link_ready=False):
     www, backup_root = Path(www), Path(backup_root)
     check_transactions(backup_root)
     old = {n: read_optional(www / n) for n in PLAYLISTS}
@@ -250,7 +345,8 @@ def apply(www, backup_root, rows):
         if path.suffix.lower() in (".png", ".jpg", ".webp"):
             logos[identity(path.stem)] = "/iptv/logos/" + quote(path.name)
     files, changes, pending = plan(old["new.m3u"].decode(), old["new-logo.m3u"].decode(), rows,
-                                   vsp_endpoints=vsp, logos=logos)
+                                   vsp_endpoints=vsp, logos=logos, auto_archive=auto_archive,
+                                   audit=audit, link_ready=link_ready, archived=archived_entries(backup_root))
     if not files:
         return {"state": "unchanged", "changes": [], "pending": pending[:32]}
     # Keep backups instead of pruning user data. Stop safely at the explicit cap.
@@ -265,7 +361,7 @@ def apply(www, backup_root, rows):
         if data is not None:
             atomic_bytes(backup / name, data, 0o600)
     new = {name: files[name].encode() for name in PLAYLISTS}
-    manifest = {"version": 2, "at": time.time(), "changes": changes, "state": "prepared",
+    manifest = {"version": 3, "at": time.time(), "sequence": len(list(backup_root.glob("update-*"))), "changes": changes, "state": "prepared",
                 "before": {n: hashlib.sha256(v).hexdigest() if v is not None else None for n, v in old.items()},
                 "after": {n: hashlib.sha256(v).hexdigest() for n, v in new.items()}}
     save_manifest(backup, manifest)

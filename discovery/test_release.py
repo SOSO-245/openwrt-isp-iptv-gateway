@@ -114,6 +114,69 @@ class ReleaseIntegrationTests(unittest.TestCase):
             self.assertEqual(self.api(port, '/health'), (200, {'status': 'ok'}))
             self.assertEqual(self.api(port, '/v1/status', token=server.token)[1]['baseline_count'], 1)
 
+    def test_probe_waits_for_delayed_headers_within_receive_budget(self):
+        class DelayedStream(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                time.sleep(1.2)
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-Length', '4')
+                    self.end_headers()
+                    self.wfile.write(b'test')
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+        with serving(ThreadingHTTPServer(('127.0.0.1', 0), DelayedStream)) as port:
+            def connection(host, requested_port, **kwargs):
+                self.assertEqual((host, requested_port), ('192.0.2.1', 12123))
+                return CONNECTION('127.0.0.1', port, **kwargs)
+
+            with patch('server.http.client.HTTPConnection', side_effect=connection), \
+                    patch('server.media_details', return_value={'validation':'media'}) as analyze:
+                result=self.worker.probe('239.255.42.1:8000')
+                self.assertEqual(result['validation'],'media')
+                self.assertEqual(analyze.call_args.args[0],b'test')
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg and FFprobe required')
+    def test_high_mux_rate_partial_ts_needs_parameters_not_just_codec_names(self):
+        for pat_period in ('0.1', '1'):
+            with self.subTest(pat_period=pat_period):
+                media = subprocess.run([
+                    'ffmpeg', '-hide_banner', '-loglevel', 'error',
+                    '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25',
+                    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
+                    '-t', '3', '-c:v', 'libx264', '-preset', 'ultrafast',
+                    '-g', '25', '-keyint_min', '25', '-sc_threshold', '0', '-c:a', 'aac',
+                    '-metadata', 'service_name=Example HD', '-muxrate', '50000000',
+                    '-pat_period', pat_period, '-f', 'mpegts', 'pipe:1',
+                ], check=True, capture_output=True, timeout=15).stdout
+                # Start between keyframes, as joining a live multicast stream does.
+                start = 2 * 1048576
+                short = media_details(media[start:start + 1048576])
+                deep = media_details(media[start:start + 8388608], deep=True)
+                self.assertEqual(short['validation'], 'inconclusive')
+                self.assertEqual(short['analysis']['reason'], 'stream_parameters_incomplete')
+                self.assertGreater(short['analysis']['incomplete_streams'], 0)
+                self.assertEqual(deep['validation'], 'media')
+                self.assertEqual(deep['analysis']['reason'], 'audio_video')
+                self.assertEqual({s['codec'] for s in deep['streams']}, {'h264', 'aac'})
+                self.assertEqual(deep['programs'][0]['name'], 'Example HD')
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg and FFprobe required')
+    def test_real_radio_remains_media_without_claiming_video(self):
+        media = subprocess.run([
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+            '-i', 'sine=frequency=440:sample_rate=48000', '-t', '1', '-c:a', 'aac',
+            '-metadata', 'service_name=Example Radio', '-f', 'mpegts', 'pipe:1',
+        ], check=True, capture_output=True, timeout=15).stdout
+        result = media_details(media)
+        self.assertEqual(result['validation'], 'media')
+        self.assertEqual(result['analysis']['reason'], 'audio_only')
+        self.assertEqual(result['analysis']['video_streams'], 0)
+
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg and FFprobe required')
     def test_real_media_http_audit_and_worker_restart(self):
         media = subprocess.run([
